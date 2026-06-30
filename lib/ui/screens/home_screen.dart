@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../widgets/dimension_inputs.dart';
 import '../widgets/frequency_axis.dart';
+import '../widgets/mode_3d_view.dart';
 import '../widgets/mode_list.dart';
 import '../widgets/piano_keyboard.dart';
 import '../widgets/pressure_map.dart';
@@ -39,6 +40,7 @@ class HomeScreen extends ConsumerWidget {
                   child: PianoKeyboard(),
                 ),
                 PressureMap(),
+                Mode3DView(),
                 Divider(height: 1),
               ],
             ),
