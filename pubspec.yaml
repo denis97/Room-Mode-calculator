@@ -1,0 +1,28 @@
+name: room_mode_calculator
+description: "Calculate the acoustic room modes of a rectangular room."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # State management for the room inputs and derived mode list.
+  flutter_riverpod: ^2.6.1
+
+  # Plays the generated sine tones when a mode/key is tapped.
+  audioplayers: ^6.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
