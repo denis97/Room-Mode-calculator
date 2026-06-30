@@ -21,7 +21,12 @@ jobs:
           cache: true
 
       - name: Regenerate platform folders
-        run: flutter create .
+        # Only (re)generate the android/ ios/ platform code — not lib/ or test/.
+        # `flutter create` would otherwise recreate the default test/widget_test.dart
+        # (which references a `MyApp` this project doesn't define) and break analyze.
+        run: |
+          flutter create --platforms=android,ios .
+          rm -f test/widget_test.dart
 
       - name: Install dependencies
         run: flutter pub get
