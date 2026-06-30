@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -96,6 +98,7 @@ class _NumberField extends StatefulWidget {
 
 class _NumberFieldState extends State<_NumberField> {
   late final TextEditingController _controller;
+  Timer? _debounce;
 
   @override
   void initState() {
@@ -119,6 +122,7 @@ class _NumberFieldState extends State<_NumberField> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -135,8 +139,16 @@ class _NumberFieldState extends State<_NumberField> {
           border: const OutlineInputBorder(),
         ),
         onChanged: (text) {
+          // Keep typing instant (local controller), but defer the expensive
+          // recompute until the user pauses, so the UI never recomputes
+          // mid-keystroke.
           final v = double.tryParse(text);
-          if (v != null && v > 0) widget.onChanged(v);
+          if (v == null || v <= 0) return;
+          _debounce?.cancel();
+          _debounce = Timer(
+            const Duration(milliseconds: 300),
+            () => widget.onChanged(v),
+          );
         },
       ),
     );

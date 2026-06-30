@@ -10,6 +10,9 @@ import '../widgets/pressure_map.dart';
 /// The single-screen home of the cuboid calculator. It stacks the input card,
 /// the frequency axis, the piano keyboard, the pressure map, and the full mode
 /// list — all driven live from the room inputs.
+///
+/// Built as a [CustomScrollView] so the (potentially long) mode list is a lazy
+/// [SliverList] rather than an eagerly-built column.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -19,23 +22,29 @@ class HomeScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Room Mode Calculator'),
       ),
-      body: ListView(
-        children: const [
-          DimensionInputs(),
-          _SectionLabel('Frequency axis'),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: 12),
-            child: FrequencyAxis(),
+      body: const CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: Column(
+              children: [
+                DimensionInputs(),
+                _SectionLabel('Frequency axis'),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: FrequencyAxis(),
+                ),
+                _SectionLabel('Keyboard — tap to hear a mode'),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: PianoKeyboard(),
+                ),
+                PressureMap(),
+                Divider(height: 1),
+              ],
+            ),
           ),
-          _SectionLabel('Keyboard — tap to hear a mode'),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: 12),
-            child: PianoKeyboard(),
-          ),
-          PressureMap(),
-          Divider(height: 1),
-          ModeList(),
-          SizedBox(height: 24),
+          ModeListSliver(),
+          SliverToBoxAdapter(child: SizedBox(height: 24)),
         ],
       ),
     );
@@ -51,12 +60,15 @@ class _SectionLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: Text(
-        text,
-        style: Theme.of(context)
-            .textTheme
-            .titleSmall
-            ?.copyWith(color: Theme.of(context).colorScheme.primary),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          text,
+          style: Theme.of(context)
+              .textTheme
+              .titleSmall
+              ?.copyWith(color: Theme.of(context).colorScheme.primary),
+        ),
       ),
     );
   }

@@ -1,8 +1,9 @@
 name: Build
 
-# Regenerates the platform folders, checks the Dart code, and compiles a debug
-# APK on every push / PR. Because android/ and ios/ are kept out of the repo,
-# the `flutter create .` step recreates them from pubspec.yaml before building.
+# Regenerates the platform folders, checks the Dart code, and compiles the app
+# (debug APK + release per-ABI APKs + release AAB) on every push / PR. Because
+# android/ and ios/ are kept out of the repo, the `flutter create .` step
+# recreates them from pubspec.yaml before building.
 
 on:
   push:
@@ -37,12 +38,39 @@ jobs:
       - name: Run tests
         run: flutter test
 
+      # Debug APK: large (~70 MB) — bundles the JIT VM and every ABI. Handy for
+      # quick install/testing, NOT representative of real install size.
       - name: Build debug APK
         run: flutter build apk --debug
 
-      - name: Upload APK artifact
+      # Release APKs, one per CPU architecture (AOT-compiled, R8-shrunk). Each is
+      # only ~8–12 MB — what a device actually installs. (Signed with the debug
+      # key until a real release keystore is configured.)
+      - name: Build release APKs (split per ABI)
+        run: flutter build apk --release --split-per-abi
+
+      # Release App Bundle for Play Store distribution (Google serves a
+      # per-device APK from it).
+      - name: Build release App Bundle
+        run: flutter build appbundle --release
+
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload release APKs (per ABI)
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apks
+          path: build/app/outputs/flutter-apk/app-*-release.apk
+          if-no-files-found: error
+
+      - name: Upload release App Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-aab
+          path: build/app/outputs/bundle/release/app-release.aab
           if-no-files-found: error
