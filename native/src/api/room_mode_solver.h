@@ -10,25 +10,30 @@
 // already expect. No UI code needs to change to consume this.
 extern "C" {
 
+// Fields are grouped by size (pointers, then doubles, then int32s) so the
+// struct has no interior padding -- its layout is then unambiguous to mirror
+// exactly in Dart's FFI Struct (see lib/core/numeric/native/
+// room_mode_bindings.dart), instead of depending on the C compiler's padding
+// rules for a mixed-size field order.
 struct NativeSolveResult {
-    // Voxel grid geometry (visualization only -- the eigenvalues/frequencies
-    // come from the true FEM mesh, not this grid).
-    int32_t nx, ny, nz;
+    // -- pointers (8-byte aligned) --
+    int32_t* ci;           // cellCount
+    int32_t* cj;           // cellCount
+    int32_t* ck;           // cellCount
+    int32_t* neighbors;    // cellCount * 6
+    double* frequencies;   // modeCount, ascending
+    double* fields;        // modeCount * cellCount, row-major (mode-major),
+                            // resampled from the FEM solution onto the voxel grid
+    char* errorMessage;    // null when success != 0
+
+    // -- doubles (8-byte aligned) --
     double h, originX, originY, originZ;
+
+    // -- int32s (4-byte aligned) --
+    int32_t nx, ny, nz;
     int32_t cellCount;
-    int32_t* ci;         // cellCount
-    int32_t* cj;         // cellCount
-    int32_t* ck;         // cellCount
-    int32_t* neighbors;  // cellCount * 6
-
-    // Modes, ascending by frequency.
     int32_t modeCount;
-    double* frequencies;  // modeCount
-    double* fields;       // modeCount * cellCount, row-major (mode-major),
-                           // resampled from the FEM solution onto the voxel grid
-
-    int32_t success;      // 0 on failure; check errorMessage
-    char* errorMessage;   // null when success != 0
+    int32_t success;       // 0 on failure; check errorMessage
 };
 
 // [polygonX]/[polygonY]: floor plan vertices (metres), [polygonVertexCount] >= 3.

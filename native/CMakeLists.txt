@@ -31,18 +31,23 @@ target_include_directories(room_mode_native PRIVATE
 target_compile_options(room_mode_native PRIVATE -O3)
 
 # Native self-test (box FDM/FEM vs analytical, star FEM vs FDM) -- no Flutter
-# or mobile toolchain required, runs on the host directly.
-add_executable(room_mode_native_test test/test_main.cpp)
-target_include_directories(room_mode_native_test PRIVATE
-  src/core
-  ${eigen_SOURCE_DIR}
-)
-target_compile_options(room_mode_native_test PRIVATE -O3)
+# or mobile toolchain required, runs on the host directly. Skipped when
+# cross-compiling for a mobile target (e.g. invoked from Android's Gradle/NDK
+# build via externalNativeBuild): those builds only need the shared library,
+# and a host test executable wouldn't run there anyway.
+if(NOT ANDROID AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  add_executable(room_mode_native_test test/test_main.cpp)
+  target_include_directories(room_mode_native_test PRIVATE
+    src/core
+    ${eigen_SOURCE_DIR}
+  )
+  target_compile_options(room_mode_native_test PRIVATE -O3)
 
-add_executable(room_mode_api_test test/test_api.cpp)
-target_link_libraries(room_mode_api_test PRIVATE room_mode_native)
-target_include_directories(room_mode_api_test PRIVATE src/core)
+  add_executable(room_mode_api_test test/test_api.cpp)
+  target_link_libraries(room_mode_api_test PRIVATE room_mode_native)
+  target_include_directories(room_mode_api_test PRIVATE src/core)
 
-enable_testing()
-add_test(NAME room_mode_native_test COMMAND room_mode_native_test)
-add_test(NAME room_mode_api_test COMMAND room_mode_api_test)
+  enable_testing()
+  add_test(NAME room_mode_native_test COMMAND room_mode_native_test)
+  add_test(NAME room_mode_api_test COMMAND room_mode_api_test)
+endif()

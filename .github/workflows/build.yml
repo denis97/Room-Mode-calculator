@@ -1,9 +1,10 @@
 name: Build
 
-# Regenerates the platform folders, checks the Dart code, and compiles the app
-# (debug APK + release per-ABI APKs + release AAB) on every push / PR. Because
-# android/ and ios/ are kept out of the repo, the `flutter create .` step
-# recreates them from pubspec.yaml before building.
+# Checks the Dart code and compiles the app (debug APK + release per-ABI APKs
+# + release AAB) on every push / PR. android/ and ios/ are committed directly
+# (not regenerated in CI) because they carry custom native-build config for
+# the room-mode solver (native/) -- see native/README.md and
+# android/app/build.gradle.
 
 on:
   push:
@@ -38,13 +39,11 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Regenerate platform folders
-        # Only (re)generate the android/ ios/ platform code — not lib/ or test/.
-        # `flutter create` would otherwise recreate the default test/widget_test.dart
-        # (which references a `MyApp` this project doesn't define) and break analyze.
-        run: |
-          flutter create --platforms=android,ios .
-          rm -f test/widget_test.dart
+      # The Android build compiles native/ (the room-mode solver) via CMake,
+      # which needs the specific NDK version android/app/build.gradle asks for
+      # (flutter.ndkVersion) actually installed, not just the base Android SDK.
+      - name: Install Android NDK
+        run: yes | sdkmanager --install "ndk;26.1.10909125"
 
       - name: Install dependencies
         run: flutter pub get

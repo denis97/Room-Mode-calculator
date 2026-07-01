@@ -58,6 +58,40 @@ class VoxelGrid {
         originZ + (ck[c] + 0.5) * h,
       );
 
+  /// Builds a grid from raw arrays already matching this class's invariants
+  /// (compact indices 0..cellCount, six-neighbour connectivity) -- used by
+  /// the native solver's FFI bridge, which voxelizes the same way this class
+  /// does natively and hands back the result over the C ABI.
+  factory VoxelGrid.fromNativeData({
+    required int nx,
+    required int ny,
+    required int nz,
+    required double h,
+    required double originX,
+    required double originY,
+    required double originZ,
+    required int cellCount,
+    required Int32List ci,
+    required Int32List cj,
+    required Int32List ck,
+    required Int32List neighbors,
+  }) {
+    return VoxelGrid._(
+      nx: nx,
+      ny: ny,
+      nz: nz,
+      h: h,
+      originX: originX,
+      originY: originY,
+      originZ: originZ,
+      cellCount: cellCount,
+      ci: ci,
+      cj: cj,
+      ck: ck,
+      neighbors: neighbors,
+    );
+  }
+
   /// Builds a grid covering [shape] with roughly [targetPerAxis] cubic cells
   /// along the longest axis.
   factory VoxelGrid.fromShape(RoomShape shape, {int targetPerAxis = 16}) {

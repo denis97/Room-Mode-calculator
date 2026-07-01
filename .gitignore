@@ -43,7 +43,3 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
-
-# Generated platform scaffolding — recreated by `flutter create .` (see README).
-/android/
-/ios/

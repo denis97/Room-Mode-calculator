@@ -54,6 +54,38 @@ component. `test_main.cpp`'s `testStarFdmNoSpuriousModes` locks in the exact
 case that exposed this (a star at resolution 12, which previously returned
 `[0.000, 0.000, 45.284]` Hz instead of three real modes).
 
+## Mobile wiring
+
+- **Android:** fully wired. `android/app/build.gradle` builds this directory
+  via Gradle's `externalNativeBuild { cmake { path "../../native/CMakeLists.txt" } }`,
+  producing a `libroom_mode_native.so` per ABI that's bundled into the APK
+  automatically. `lib/core/numeric/native/room_mode_bindings.dart` loads it
+  with `DynamicLibrary.open('libroom_mode_native.so')`. CI builds and tests
+  this on every push (see `.github/workflows/build.yml`).
+- **iOS: not wired up yet, and needs a manual Xcode step this repo can't do
+  blind.** This environment has no Mac, so an automated edit to
+  `ios/Runner.xcodeproj/project.pbxproj` couldn't be verified and risks
+  corrupting the Xcode project file. To finish the iOS side on a Mac:
+  1. Open `ios/Runner.xcworkspace` in Xcode.
+  2. Add `native/src/core` and `native/src/api` to the Runner target's
+     "Compile Sources" (drag the folders in, or File → Add Files to "Runner").
+  3. Add the fetched Eigen headers to the header search path (either let
+     CMake's `FetchContent` populate them via an Xcode "Run Script" build
+     phase calling `cmake --build`, or vendor just the `Eigen/` header
+     directory under `ios/` and add it to Header Search Paths -- the CMake
+     route keeps one source of truth with the Android build).
+  4. Ensure C++17 and the same `-O3` optimization are set for those files.
+  5. The Dart binding (`RoomModeNativeLibrary._open()`) already expects this:
+     since the solver is statically linked into the app binary rather than a
+     separate `.dylib`, it uses `DynamicLibrary.process()` (symbol lookup in
+     the running process), not `DynamicLibrary.open()`.
+  6. Verify with `flutter run` on a real device/simulator, then update this
+     note once done.
+
+  Until that's done, the app falls back to the pure-Dart solver on iOS (see
+  `lib/state/custom_room_providers.dart`) -- slower, but functionally
+  complete, so iOS isn't broken in the meantime.
+
 ## Building
 
 ```bash
