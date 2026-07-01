@@ -60,6 +60,25 @@ ModalAnalysisResult runFloorPlanAnalysis(FloorPlan plan) {
   );
 }
 
+/// A named starting floor shape offered as a one-tap preset.
+class RoomPreset {
+  const RoomPreset(this.name, this.vertices);
+  final String name;
+  final List<(double, double)> vertices;
+}
+
+/// Preset floor shapes (metres) for the editor.
+const List<RoomPreset> roomPresets = [
+  RoomPreset('Rectangle', [(0, 0), (5, 0), (5, 4), (0, 4)]),
+  RoomPreset('L-shape', [(0, 0), (5, 0), (5, 3), (2.5, 3), (2.5, 5), (0, 5)]),
+  RoomPreset('T-shape', [
+    (1.5, 0), (3.5, 0), (3.5, 3), (5, 3), (5, 5), (0, 5), (0, 3), (1.5, 3),
+  ]),
+  RoomPreset('U-shape', [
+    (0, 0), (5, 0), (5, 5), (3.5, 5), (3.5, 2), (1.5, 2), (1.5, 5), (0, 5),
+  ]),
+];
+
 /// The floor plan currently being edited. Starts as an L-shape to show off the
 /// non-rectangular capability.
 final floorPlanProvider = StateProvider<FloorPlan>((ref) {
@@ -88,3 +107,8 @@ final customModesProvider =
 
 /// Index of the selected computed mode (for the 3D view).
 final selectedCustomModeProvider = StateProvider<int?>((ref) => null);
+
+/// Height (metres) of the interior cross-section slice shown for the selected
+/// computed mode.
+final customSliceHeightProvider =
+    StateProvider<double>((ref) => AcousticDefaults.earHeightM);
