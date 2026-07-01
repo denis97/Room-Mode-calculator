@@ -1,8 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/acoustics/mode.dart';
 import '../core/acoustics/mode_calculator.dart';
 import '../core/acoustics/room.dart';
+import '../core/acoustics/room_ratios.dart';
 import '../core/acoustics/schroeder.dart';
 import '../core/constants.dart';
 
@@ -25,6 +28,20 @@ final modesProvider = Provider<List<RoomMode>>((ref) {
 final schroederProvider = Provider<double>((ref) {
   final room = ref.watch(roomProvider);
   return schroederFrequency(room);
+});
+
+/// ⅓-octave Bonello bands over the modal region (up to the Schroeder frequency,
+/// bounded by the user's cutoff), recomputed with the modes.
+final bonelloBandsProvider = Provider<List<ThirdOctaveBand>>((ref) {
+  final modes = ref.watch(modesProvider);
+  final schroeder = ref.watch(schroederProvider);
+  final maxFreq = ref.watch(maxFrequencyProvider);
+  final upper = math.min(math.max(schroeder, 120.0), maxFreq);
+  return bonelloBands(
+    [for (final m in modes) m.frequency],
+    minHz: 16,
+    maxHz: upper,
+  );
 });
 
 /// The index (into [modesProvider]) of the mode currently selected for the
