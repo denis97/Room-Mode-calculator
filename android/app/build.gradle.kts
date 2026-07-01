@@ -24,15 +24,16 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        ndk {
-            // Matches the per-ABI release APKs the build already produces.
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
-        }
         externalNativeBuild {
             cmake {
                 arguments += listOf("-DANDROID_STL=c++_shared")
             }
         }
+        // No ndk.abiFilters here: `flutter build apk --split-per-abi` (see
+        // the CI workflow) configures its own `splits.abi` block, and Gradle
+        // rejects having both set at once ("Conflicting configuration").
+        // Leaving ABI selection unset lets the native library follow
+        // whichever ABI(s) the surrounding app build already targets.
     }
 
     // Builds the native room-mode solver (../../native) via the same
