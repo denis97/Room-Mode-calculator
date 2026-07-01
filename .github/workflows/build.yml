@@ -11,6 +11,23 @@ on:
   pull_request:
 
 jobs:
+  native-test:
+    # Validates the C++ solver core (native/) on its own: no Flutter/mobile
+    # toolchain needed, so this is a fast, cheap correctness gate that runs
+    # independently of the Flutter build below.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S native -B native/build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build native/build -j
+
+      - name: Test
+        run: ctest --test-dir native/build --output-on-failure
+
   build:
     runs-on: ubuntu-latest
     steps:
