@@ -33,6 +33,45 @@ class ModalAnalysisResult {
   final List<ComputedMode> modes;
 }
 
+/// A horizontal cross-section of a mode's pressure field at a fixed height.
+/// [values] is row-major (`nx` × `ny`); a cell is `null` where it lies outside
+/// the room. Values are signed; [maxAbs] is the field's peak magnitude for
+/// color normalization.
+class ModeSlice {
+  ModeSlice({
+    required this.nx,
+    required this.ny,
+    required this.values,
+    required this.maxAbs,
+  });
+
+  final int nx;
+  final int ny;
+  final List<double?> values;
+  final double maxAbs;
+
+  double? at(int i, int j) => values[j * nx + i];
+}
+
+/// Extracts the horizontal slice of [field] (over [grid]) nearest to height
+/// [zMetres] — the interior cross-section behind the 2D slice view.
+ModeSlice horizontalSlice(VoxelGrid grid, Float64List field, double zMetres) {
+  final k = (((zMetres - grid.originZ) / grid.h).floor())
+      .clamp(0, grid.nz - 1);
+  final values = List<double?>.filled(grid.nx * grid.ny, null);
+  var maxAbs = 1e-12;
+  for (final v in field) {
+    final a = v.abs();
+    if (a > maxAbs) maxAbs = a;
+  }
+  for (var c = 0; c < grid.cellCount; c++) {
+    if (grid.ck[c] == k) {
+      values[grid.cj[c] * grid.nx + grid.ci[c]] = field[c];
+    }
+  }
+  return ModeSlice(nx: grid.nx, ny: grid.ny, values: values, maxAbs: maxAbs);
+}
+
 /// Computes the lowest [modeCount] acoustic modes of an arbitrary [shape] by
 /// solving the rigid-wall Helmholtz eigenproblem on a voxel grid.
 ///

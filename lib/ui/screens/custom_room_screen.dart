@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/numeric/modal_analysis.dart';
 import '../../state/custom_room_providers.dart';
 import '../widgets/computed_mode_3d_view.dart';
+import '../widgets/custom_mode_slice_view.dart';
 import '../widgets/floor_plan_editor.dart';
 
 /// The non-rectangular room workflow: draw a floor plan, run the on-device
@@ -32,6 +33,18 @@ class CustomRoomScreen extends ConsumerWidget {
                 const SizedBox(height: 4),
                 Text('Drag vertices • tap an edge to add • long-press to remove',
                     style: Theme.of(context).textTheme.bodySmall),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final preset in roomPresets)
+                      OutlinedButton(
+                        onPressed: () => planNotifier.state =
+                            plan.copyWith(vertices: preset.vertices),
+                        child: Text(preset.name),
+                      ),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 const AspectRatio(
                   aspectRatio: 1,
@@ -167,15 +180,24 @@ class _ResultsSection extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 12),
-            if (selected != null && selected < modes.length)
+            if (selected != null && selected < modes.length) ...[
               AspectRatio(
                 aspectRatio: 1.3,
                 child: ComputedMode3DView(
                   grid: result.grid,
                   mode: modes[selected],
                 ),
-              )
-            else
+              ),
+              const SizedBox(height: 12),
+              Text('Interior slice',
+                  style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 4),
+              CustomModeSliceView(
+                grid: result.grid,
+                mode: modes[selected],
+                maxHeight: result.grid.nz * result.grid.h,
+              ),
+            ] else
               const Padding(
                 padding: EdgeInsets.all(16),
                 child: Center(child: Text('Select a mode to view it in 3D')),
