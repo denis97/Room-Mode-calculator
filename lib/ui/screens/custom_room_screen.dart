@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -75,21 +77,28 @@ class CustomRoomScreen extends ConsumerWidget {
                   label: 'Resolution',
                   value: plan.resolution.toDouble(),
                   min: 10,
-                  max: 24,
-                  divisions: 14,
+                  max: 32,
+                  divisions: 22,
                   suffix: 'cells',
                   onChanged: (v) => planNotifier.state =
                       plan.copyWith(resolution: v.round()),
                 ),
+                _ResolutionHint(plan: plan),
                 _LabeledSlider(
                   label: 'Modes',
                   value: plan.modeCount.toDouble(),
                   min: 4,
-                  max: 12,
-                  divisions: 8,
+                  max: 20,
+                  divisions: 16,
                   suffix: '',
                   onChanged: (v) => planNotifier.state =
                       plan.copyWith(modeCount: v.round()),
+                ),
+                Text(
+                  'Higher resolution = more accurate modes but slower '
+                  '(work grows ~ resolution⁴). More modes cost more too, and '
+                  'the highest ones need enough cells to be reliable.',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 8),
                 FilledButton.icon(
@@ -239,6 +248,34 @@ class _FootprintReadout extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Live "what will the grid look like" hint: cell size and approximate grid
+/// dimensions for the current resolution, so the accuracy/cost trade-off is
+/// visible while dragging the slider.
+class _ResolutionHint extends StatelessWidget {
+  const _ResolutionHint({required this.plan});
+
+  final FloorPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final shape =
+        ExtrudedPolygonShape(floor: plan.vertices, height: plan.height);
+    final maxExtent =
+        [shape.extentX, shape.extentY, plan.height].reduce(math.max);
+    final h = maxExtent / plan.resolution;
+    final nx = (shape.extentX / h).ceil();
+    final ny = (shape.extentY / h).ceil();
+    final nz = (plan.height / h).ceil();
+    return Padding(
+      padding: const EdgeInsets.only(left: 96, bottom: 4),
+      child: Text(
+        'cell ≈ ${(h * 100).toStringAsFixed(0)} cm • grid up to $nx×$ny×$nz',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
     );
   }
 }
