@@ -15,11 +15,24 @@ import '../../state/room_providers.dart';
 /// (blue = negative, black ≈ node, red = positive). A slider moves the slice
 /// height. Antinodes appear at the walls; nodal lines are where the pattern
 /// passes through black.
-class PressureMap extends ConsumerWidget {
+///
+/// The heatmap image is cached and only re-rendered when the mode, room, or
+/// slice height actually changes — so unrelated rebuilds (e.g. editing the
+/// room while another mode is selected) don't trigger a re-decode.
+class PressureMap extends ConsumerStatefulWidget {
   const PressureMap({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PressureMap> createState() => _PressureMapState();
+}
+
+class _PressureMapState extends ConsumerState<PressureMap> {
+  ui.Image? _image;
+  String? _renderedKey;
+  String? _pendingKey;
+
+  @override
+  Widget build(BuildContext context) {
     final modes = ref.watch(modesProvider);
     final index = ref.watch(selectedModeIndexProvider);
     final room = ref.watch(roomProvider);
@@ -38,6 +51,11 @@ class PressureMap extends ConsumerWidget {
     }
 
     final mode = modes[index];
+    final key = _cacheKey(mode, room, sliceHeight);
+    if (key != _renderedKey && key != _pendingKey) {
+      _pendingKey = key;
+      _render(mode, room, sliceHeight, key);
+    }
 
     return Card(
       margin: const EdgeInsets.all(12),
@@ -59,18 +77,12 @@ class PressureMap extends ConsumerWidget {
             const SizedBox(height: 8),
             AspectRatio(
               aspectRatio: room.length / room.width,
-              child: FutureBuilder<ui.Image>(
-                future: _renderImage(mode, room, sliceHeight),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  return CustomPaint(
-                    painter: _ImagePainter(snapshot.data!),
-                    child: const SizedBox.expand(),
-                  );
-                },
-              ),
+              child: _image == null
+                  ? const Center(child: CircularProgressIndicator())
+                  : CustomPaint(
+                      painter: _ImagePainter(_image!),
+                      child: const SizedBox.expand(),
+                    ),
             ),
             Row(
               children: [
@@ -91,6 +103,31 @@ class PressureMap extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  String _cacheKey(RoomMode mode, Room room, double sliceHeight) =>
+      '${mode.p},${mode.q},${mode.r}|'
+      '${room.length},${room.width},${room.height}|'
+      '${sliceHeight.toStringAsFixed(3)}';
+
+  Future<void> _render(
+    RoomMode mode,
+    Room room,
+    double sliceHeight,
+    String key,
+  ) async {
+    final image = await _renderImage(mode, room, sliceHeight);
+    if (!mounted) return;
+    // Drop the result if a newer render has since been requested.
+    if (key != _pendingKey) {
+      image.dispose();
+      return;
+    }
+    setState(() {
+      _image?.dispose();
+      _image = image;
+      _renderedKey = key;
+    });
   }
 
   Future<ui.Image> _renderImage(
@@ -130,6 +167,12 @@ class PressureMap extends ConsumerWidget {
     } else {
       return ((m * 40).round(), (m * 80).round(), (m * 255).round());
     }
+  }
+
+  @override
+  void dispose() {
+    _image?.dispose();
+    super.dispose();
   }
 }
 
