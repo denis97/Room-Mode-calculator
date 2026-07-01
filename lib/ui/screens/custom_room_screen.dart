@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/geometry/room_shape.dart';
 import '../../core/numeric/modal_analysis.dart';
 import '../../state/custom_room_providers.dart';
 import '../widgets/computed_mode_3d_view.dart';
@@ -50,6 +51,8 @@ class CustomRoomScreen extends ConsumerWidget {
                   aspectRatio: 1,
                   child: FloorPlanEditor(),
                 ),
+                const SizedBox(height: 4),
+                _FootprintReadout(plan: plan),
                 _LabeledSlider(
                   label: 'Height',
                   value: plan.height,
@@ -205,6 +208,37 @@ class _ResultsSection extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A compact readout of the room's real size, computed live from the plan.
+class _FootprintReadout extends StatelessWidget {
+  const _FootprintReadout({required this.plan});
+
+  final FloorPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final shape =
+        ExtrudedPolygonShape(floor: plan.vertices, height: plan.height);
+    final area = shape.floorArea;
+    final volume = area * plan.height;
+    return Row(
+      children: [
+        Icon(Icons.straighten,
+            size: 16, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            'Footprint ${shape.extentX.toStringAsFixed(1)} × '
+            '${shape.extentY.toStringAsFixed(1)} m  •  '
+            'floor ${area.toStringAsFixed(1)} m²  •  '
+            'volume ${volume.toStringAsFixed(1)} m³',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -94,6 +94,16 @@ class ExtrudedPolygonShape implements RoomShape {
   @override
   double get extentZ => height;
 
+  /// Floor area in m², via the shoelace formula (winding-independent).
+  double get floorArea {
+    var sum = 0.0;
+    final n = floor.length;
+    for (var i = 0, j = n - 1; i < n; j = i++) {
+      sum += (floor[j].$1 + floor[i].$1) * (floor[j].$2 - floor[i].$2);
+    }
+    return sum.abs() / 2;
+  }
+
   @override
   bool contains(double x, double y, double z) {
     if (z < 0 || z > height) return false;

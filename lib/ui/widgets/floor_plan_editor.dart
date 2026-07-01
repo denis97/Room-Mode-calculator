@@ -89,6 +89,7 @@ class _FloorPlanEditorState extends ConsumerState<FloorPlanEditor> {
               lineColor: scheme.primary,
               fillColor: scheme.primary.withValues(alpha: 0.12),
               vertexColor: scheme.primary,
+              labelColor: scheme.onSurface.withValues(alpha: 0.45),
             ),
             child: const SizedBox.expand(),
           ),
@@ -136,6 +137,7 @@ class _FloorPlanPainter extends CustomPainter {
     required this.lineColor,
     required this.fillColor,
     required this.vertexColor,
+    required this.labelColor,
   });
 
   final List<(double, double)> vertices;
@@ -144,17 +146,24 @@ class _FloorPlanPainter extends CustomPainter {
   final Color lineColor;
   final Color fillColor;
   final Color vertexColor;
+  final Color labelColor;
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 1 m grid.
+    // 1 m grid with metre labels along the top and left edges.
     final grid = Paint()
       ..color = gridColor
       ..strokeWidth = 1;
+    final labelStyle = TextStyle(color: labelColor, fontSize: 9);
     for (var m = 0; m <= FloorPlanEditor.worldSize; m++) {
       final p = m * scale;
       canvas.drawLine(Offset(p, 0), Offset(p, size.height), grid);
       canvas.drawLine(Offset(0, p), Offset(size.width, p), grid);
+      if (m < FloorPlanEditor.worldSize) {
+        // X axis label (top) and Y axis label (left).
+        _label(canvas, '${m}m', Offset(p + 2, 1), labelStyle);
+        if (m > 0) _label(canvas, '${m}m', Offset(2, p + 1), labelStyle);
+      }
     }
 
     if (vertices.length < 2) return;
@@ -175,10 +184,38 @@ class _FloorPlanPainter extends CustomPainter {
         ..strokeWidth = 2,
     );
 
+    // Edge length labels (metres) at each edge midpoint.
+    final edgeLabelStyle = TextStyle(
+      color: lineColor,
+      fontSize: 10,
+      fontWeight: FontWeight.w600,
+    );
+    for (var i = 0; i < vertices.length; i++) {
+      final a = vertices[i];
+      final b = vertices[(i + 1) % vertices.length];
+      final len =
+          math.sqrt(math.pow(b.$1 - a.$1, 2) + math.pow(b.$2 - a.$2, 2).toDouble());
+      if (len < 0.1) continue;
+      final mid = Offset(
+        (a.$1 + b.$1) / 2 * scale,
+        (a.$2 + b.$2) / 2 * scale,
+      );
+      _label(canvas, '${len.toStringAsFixed(1)}m',
+          mid + const Offset(2, -6), edgeLabelStyle);
+    }
+
     final vertexPaint = Paint()..color = vertexColor;
     for (final v in vertices) {
       canvas.drawCircle(Offset(v.$1 * scale, v.$2 * scale), 6, vertexPaint);
     }
+  }
+
+  void _label(Canvas canvas, String text, Offset at, TextStyle style) {
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, at);
   }
 
   @override
