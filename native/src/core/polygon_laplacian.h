@@ -10,6 +10,7 @@ struct PolygonGridInfo {
     double h;
     double minX, minY;
     int insideFootprintCells;
+    std::vector<int> ci, cj, ck; // grid indices of each inside cell (for visualization/resampling)
 };
 
 // Voxelizes an extruded polygon, mirroring lib/core/geometry/voxel_grid.dart.
@@ -65,6 +66,6 @@ inline NeumannLaplacian buildPolygonLaplacian(const Polygon& poly, double height
 
     int footprint = 0;
     for (int c = 0; c < cellCount; ++c) if (ck[c] == 0) footprint++;
-    info = {nx, ny, nz, h, minX, minY, footprint};
+    info = {nx, ny, nz, h, minX, minY, footprint, ci, cj, ck};
     return op;
 }

@@ -91,7 +91,7 @@ void testStarFdmNoSpuriousModes() {
 void testStarFemSanity() {
     printf("\n-- Star FEM sanity --\n");
     Polygon star = makeStarPolygon5();
-    auto tris = fanTriangulate(star);
+    auto tris = earClipTriangulate(star);
     tris = subdivide(subdivide(tris));
     auto mesh = extrudeToTets(tris, 3.0, 8);
     auto sys = assembleFem(mesh.nodes, mesh.tets);
@@ -111,11 +111,44 @@ void testStarFemSanity() {
     }
 }
 
+void testEarClipOnConcavePolygon() {
+    printf("\n-- Ear-clipping on a concave (non-star-shaped-from-centroid) L-room --\n");
+    // A deep, narrow L: the centroid sits outside the polygon entirely, so
+    // fan-triangulation-from-centroid would silently produce a broken mesh
+    // here -- exactly the case ear-clipping needs to get right.
+    Polygon lShape;
+    lShape.verts = {{0, 0}, {6, 0}, {6, 1}, {1, 1}, {1, 6}, {0, 6}};
+    double trueArea = lShape.area();
+
+    auto tris = earClipTriangulate(lShape);
+    double triArea = 0;
+    for (auto& t : tris) {
+        double x1 = t[0].first, y1 = t[0].second;
+        double x2 = t[1].first, y2 = t[1].second;
+        double x3 = t[2].first, y3 = t[2].second;
+        triArea += std::fabs((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1)) / 2.0;
+    }
+    char msg[160];
+    snprintf(msg, sizeof(msg), "triangulated area %.4f matches true polygon area %.4f",
+             triArea, trueArea);
+    check(std::fabs(triArea - trueArea) < 1e-6, msg);
+
+    auto mesh = extrudeToTets(subdivide(tris), 2.5, 4);
+    auto sys = assembleFem(mesh.nodes, mesh.tets);
+    std::vector<double> minvSqrt(sys.numNodes);
+    for (int i = 0; i < sys.numNodes; ++i) minvSqrt[i] = 1.0 / std::sqrt(sys.lumpedM[i]);
+    FemOperator op{sys.K, minvSqrt};
+    auto pairs = femLanczosSmallestEigenpairs(op, sys.numNodes, 3, 20);
+    check(pairs.size() == 3, "L-room FEM returns the requested number of modes");
+    for (auto& p : pairs) check(p.eigenvalue > 0, "L-room mode eigenvalue is positive");
+}
+
 int main() {
     testBoxFdm();
     testBoxFem();
     testStarFdmNoSpuriousModes();
     testStarFemSanity();
+    testEarClipOnConcavePolygon();
     printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL TESTS PASSED" : "TESTS FAILED",
            failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;

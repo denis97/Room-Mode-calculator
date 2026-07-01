@@ -21,16 +21,14 @@ if(NOT eigen_POPULATED)
   FetchContent_Populate(eigen)
 endif()
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/api/room_mode_solver.cpp")
-  add_library(room_mode_native SHARED
-    src/api/room_mode_solver.cpp
-  )
-  target_include_directories(room_mode_native PRIVATE
-    src/core
-    ${eigen_SOURCE_DIR}
-  )
-  target_compile_options(room_mode_native PRIVATE -O3)
-endif()
+add_library(room_mode_native SHARED
+  src/api/room_mode_solver.cpp
+)
+target_include_directories(room_mode_native PRIVATE
+  src/core
+  ${eigen_SOURCE_DIR}
+)
+target_compile_options(room_mode_native PRIVATE -O3)
 
 # Native self-test (box FDM/FEM vs analytical, star FEM vs FDM) -- no Flutter
 # or mobile toolchain required, runs on the host directly.
@@ -41,5 +39,10 @@ target_include_directories(room_mode_native_test PRIVATE
 )
 target_compile_options(room_mode_native_test PRIVATE -O3)
 
+add_executable(room_mode_api_test test/test_api.cpp)
+target_link_libraries(room_mode_api_test PRIVATE room_mode_native)
+target_include_directories(room_mode_api_test PRIVATE src/core)
+
 enable_testing()
 add_test(NAME room_mode_native_test COMMAND room_mode_native_test)
+add_test(NAME room_mode_api_test COMMAND room_mode_api_test)
