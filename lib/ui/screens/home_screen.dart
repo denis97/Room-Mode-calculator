@@ -15,16 +15,16 @@ import '../widgets/pressure_map.dart';
 /// Built as a [CustomScrollView] so the (potentially long) mode list is a lazy
 /// [SliverList] rather than an eagerly-built column.
 class HomeScreen extends ConsumerWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.showScaffold = true});
+
+  /// When false, returns just the scrollable body (the parent supplies the
+  /// Scaffold/AppBar). Used by the root navigation shell.
+  final bool showScaffold;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Room Mode Calculator'),
-      ),
-      body: const CustomScrollView(
-        slivers: [
+    const body = CustomScrollView(
+      slivers: [
           SliverToBoxAdapter(
             child: Column(
               children: [
@@ -48,7 +48,12 @@ class HomeScreen extends ConsumerWidget {
           ModeListSliver(),
           SliverToBoxAdapter(child: SizedBox(height: 24)),
         ],
-      ),
+      );
+
+    if (!showScaffold) return body;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Room Mode Calculator')),
+      body: body,
     );
   }
 }

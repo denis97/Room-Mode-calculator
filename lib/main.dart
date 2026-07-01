@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'ui/screens/home_screen.dart';
+import 'ui/screens/root_screen.dart';
 
 void main() {
   runApp(const ProviderScope(child: RoomModeApp()));
@@ -22,7 +22,7 @@ class RoomModeApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const HomeScreen(),
+      home: const RootScreen(),
     );
   }
 }
