@@ -40,14 +40,19 @@ jobs:
           cache: true
 
       # The Android build compiles native/ (the room-mode solver) via CMake,
-      # which needs the specific NDK version android/app/build.gradle asks for
-      # (flutter.ndkVersion) actually installed, not just the base Android SDK.
-      # Using this action (rather than invoking `sdkmanager` directly) because
-      # its location/PATH isn't guaranteed the same way across runner images.
+      # which needs the specific NDK version android/app/build.gradle.kts asks
+      # for (flutter.ndkVersion) actually installed, not just the base Android
+      # SDK. Using this action (rather than invoking `sdkmanager` directly)
+      # because its location/PATH isn't guaranteed the same way across runner
+      # images. The version must match FlutterExtension.kt's default ndkVersion
+      # for the Flutter version in use (subosito/flutter-action's `channel:
+      # stable` below) -- check
+      # packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt in
+      # the Flutter SDK if this build ever fails with an NDK version mismatch.
       - uses: android-actions/setup-android@v3
 
       - name: Install Android NDK
-        run: sdkmanager --install "ndk;26.1.10909125"
+        run: sdkmanager --install "ndk;28.2.13676358"
 
       - name: Install dependencies
         run: flutter pub get
