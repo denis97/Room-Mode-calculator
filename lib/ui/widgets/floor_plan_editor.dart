@@ -7,12 +7,14 @@ import '../../state/custom_room_providers.dart';
 
 /// An interactive top-down editor for the room's floor polygon.
 ///
-/// - **Drag** a vertex to move it.
+/// - **Drag** a vertex to move it (snaps to a 0.25 m grid and locks to 90°
+///   against neighbouring vertices).
 /// - **Tap** an empty spot to insert a vertex on the nearest edge.
 /// - **Long-press** near a vertex to delete it (minimum three remain).
+/// - **Pinch** (two fingers) to zoom and pan.
 ///
 /// Coordinates are metres on a fixed [worldSize]×[worldSize] field with a 1 m
-/// grid; edits write straight to [floorPlanProvider].
+/// grid marked by tick crosses; edits write straight to [floorPlanProvider].
 class FloorPlanEditor extends ConsumerStatefulWidget {
   const FloorPlanEditor({super.key});
 
@@ -36,6 +38,32 @@ class _FloorPlanEditorState extends ConsumerState<FloorPlanEditor> {
         (p.dy / _scale).clamp(0.0, FloorPlanEditor.worldSize),
       );
 
+  static const double _snapGrid = 0.25; // metres
+
+  /// Snaps a dragged vertex to a 0.25 m grid, and aligns it to a neighbour's
+  /// row or column when close — so edges lock to horizontal/vertical (90°).
+  (double, double) _snap(
+      (double, double) p, List<(double, double)> verts, int index) {
+    var sx = (p.$1 / _snapGrid).round() * _snapGrid;
+    var sy = (p.$2 / _snapGrid).round() * _snapGrid;
+    final n = verts.length;
+    final prev = verts[(index - 1 + n) % n];
+    final next = verts[(index + 1) % n];
+    const tol = 0.4; // metres — align to neighbour axis within this distance
+    if ((sx - prev.$1).abs() < tol) {
+      sx = prev.$1;
+    } else if ((sx - next.$1).abs() < tol) {
+      sx = next.$1;
+    }
+    if ((sy - prev.$2).abs() < tol) {
+      sy = prev.$2;
+    } else if ((sy - next.$2).abs() < tol) {
+      sy = next.$2;
+    }
+    final w = FloorPlanEditor.worldSize;
+    return (sx.clamp(0.0, w), sy.clamp(0.0, w));
+  }
+
   int? _nearestVertex(Offset local, List<(double, double)> verts) {
     var best = -1;
     var bestDist = 24.0; // px hit radius
@@ -58,13 +86,20 @@ class _FloorPlanEditorState extends ConsumerState<FloorPlanEditor> {
     return LayoutBuilder(
       builder: (context, constraints) {
         _canvasSize = constraints.maxWidth;
-        return GestureDetector(
+        return InteractiveViewer(
+          // One finger edits vertices (panEnabled off); two fingers zoom/pan.
+          panEnabled: false,
+          minScale: 1,
+          maxScale: 6,
+          boundaryMargin: const EdgeInsets.all(64),
+          child: GestureDetector(
           onPanStart: (d) =>
               setState(() => _dragIndex = _nearestVertex(d.localPosition, verts)),
           onPanUpdate: (d) {
             final i = _dragIndex;
             if (i == null) return;
-            final updated = [...verts]..[i] = _localToWorld(d.localPosition);
+            final snapped = _snap(_localToWorld(d.localPosition), verts, i);
+            final updated = [...verts]..[i] = snapped;
             ref.read(floorPlanProvider.notifier).state =
                 plan.copyWith(vertices: updated);
           },
@@ -92,6 +127,7 @@ class _FloorPlanEditorState extends ConsumerState<FloorPlanEditor> {
               labelColor: scheme.onSurface.withValues(alpha: 0.45),
             ),
             child: const SizedBox.expand(),
+          ),
           ),
         );
       },
@@ -163,6 +199,19 @@ class _FloorPlanPainter extends CustomPainter {
         // X axis label (top) and Y axis label (left).
         _label(canvas, '${m}m', Offset(p + 2, 1), labelStyle);
         if (m > 0) _label(canvas, '${m}m', Offset(2, p + 1), labelStyle);
+      }
+    }
+
+    // Tick "sticks" (crosses) at every 1 m crossing, to read the grid clearly.
+    final tick = Paint()
+      ..color = labelColor
+      ..strokeWidth = 1.4;
+    const t = 3.5;
+    for (var gx = 0; gx <= FloorPlanEditor.worldSize; gx++) {
+      for (var gy = 0; gy <= FloorPlanEditor.worldSize; gy++) {
+        final cx = gx * scale, cy = gy * scale;
+        canvas.drawLine(Offset(cx - t, cy), Offset(cx + t, cy), tick);
+        canvas.drawLine(Offset(cx, cy - t), Offset(cx, cy + t), tick);
       }
     }
 

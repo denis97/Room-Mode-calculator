@@ -42,8 +42,8 @@ class CustomRoomScreen extends ConsumerWidget {
                   children: [
                     for (final preset in roomPresets)
                       OutlinedButton(
-                        onPressed: () => planNotifier.state =
-                            plan.copyWith(vertices: preset.vertices),
+                        onPressed: () => planNotifier.state = plan.copyWith(
+                            vertices: centerInWorld(preset.vertices)),
                         child: Text(preset.name),
                       ),
                   ],

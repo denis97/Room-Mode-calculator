@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -67,6 +69,27 @@ class RoomPreset {
   final List<(double, double)> vertices;
 }
 
+/// The editor's field size in metres (matches `FloorPlanEditor.worldSize`).
+const double editorWorldSize = 8.0;
+
+/// Shifts a polygon so its bounding box is centered in a [world]×[world] field.
+List<(double, double)> centerInWorld(
+  List<(double, double)> verts, {
+  double world = editorWorldSize,
+}) {
+  var minX = double.infinity, minY = double.infinity;
+  var maxX = -double.infinity, maxY = -double.infinity;
+  for (final (x, y) in verts) {
+    minX = math.min(minX, x);
+    maxX = math.max(maxX, x);
+    minY = math.min(minY, y);
+    maxY = math.max(maxY, y);
+  }
+  final dx = (world - (maxX - minX)) / 2 - minX;
+  final dy = (world - (maxY - minY)) / 2 - minY;
+  return [for (final (x, y) in verts) (x + dx, y + dy)];
+}
+
 /// Preset floor shapes (metres) for the editor.
 const List<RoomPreset> roomPresets = [
   RoomPreset('Rectangle', [(0, 0), (5, 0), (5, 4), (0, 4)]),
@@ -82,8 +105,10 @@ const List<RoomPreset> roomPresets = [
 /// The floor plan currently being edited. Starts as an L-shape to show off the
 /// non-rectangular capability.
 final floorPlanProvider = StateProvider<FloorPlan>((ref) {
-  return const FloorPlan(
-    vertices: [(0, 0), (5, 0), (5, 3), (2.5, 3), (2.5, 5), (0, 5)],
+  return FloorPlan(
+    vertices: centerInWorld(
+      const [(0, 0), (5, 0), (5, 3), (2.5, 3), (2.5, 5), (0, 5)],
+    ),
     height: AcousticDefaults.defaultHeight,
     temperatureC: AcousticDefaults.temperatureC,
     resolution: 16,
