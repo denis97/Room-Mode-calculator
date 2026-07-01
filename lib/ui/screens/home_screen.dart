@@ -7,6 +7,7 @@ import '../widgets/mode_3d_view.dart';
 import '../widgets/mode_list.dart';
 import '../widgets/piano_keyboard.dart';
 import '../widgets/pressure_map.dart';
+import '../widgets/room_quality_card.dart';
 
 /// The single-screen home of the cuboid calculator. It stacks the input card,
 /// the frequency axis, the piano keyboard, the pressure map, and the full mode
@@ -41,6 +42,7 @@ class HomeScreen extends ConsumerWidget {
                 ),
                 PressureMap(),
                 Mode3DView(),
+                RoomQualityCard(),
                 Divider(height: 1),
               ],
             ),
