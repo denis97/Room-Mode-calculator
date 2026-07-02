@@ -59,6 +59,34 @@ int main() {
     check(bad->errorMessage != nullptr, "failure includes an error message");
     free_solve_result(bad);
 
+    // Regression: a low resolution slider value used to under-mesh the FEM
+    // solve when the requested mode count was large relative to the mesh's
+    // node count (a mesh with too few nodes to support the mode count gives
+    // severely wrong low-order frequencies, not just "less precise" ones --
+    // e.g. the app's default L-room at resolution 12 with 8 modes gave 31%
+    // error on the fundamental before this fix). resolutionToFemParams now
+    // bumps the mesh level up (independent of the raw resolution value) until
+    // the node count is safely above the requested mode count.
+    std::vector<double> lx = {0, 5, 5, 2.5, 2.5, 0};
+    std::vector<double> ly = {0, 0, 3, 3, 5, 5};
+    // Reference values from a well-resolved solve (resolution 32, 8 modes).
+    double reference[3] = {29.03, 40.88, 56.82};
+
+    auto* low = solve_room_modes(lx.data(), ly.data(), (int32_t)lx.size(),
+                                  /*height=*/3.0, /*temperatureC=*/20.0,
+                                  /*targetPerAxis=*/12, /*modeCount=*/8);
+    check(low != nullptr && low->success != 0, "default room at resolution 12 solves successfully");
+    if (low != nullptr && low->success != 0) {
+        for (int i = 0; i < 3; ++i) {
+            double err = 100.0 * std::fabs(low->frequencies[i] - reference[i]) / reference[i];
+            char msg[128];
+            snprintf(msg, sizeof(msg), "mode %d at resolution 12 is within 15%% of the reference (got %.2f%%)",
+                      i, err);
+            check(err < 15.0, msg);
+        }
+    }
+    if (low != nullptr) free_solve_result(low);
+
     printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL TESTS PASSED" : "TESTS FAILED",
            failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;
