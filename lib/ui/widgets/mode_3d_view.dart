@@ -7,16 +7,20 @@ import '../../core/acoustics/mode.dart';
 import '../../core/acoustics/pressure_field.dart';
 import '../../core/acoustics/room.dart';
 import '../../state/room_providers.dart';
+import '../app_theme.dart';
 
 /// A touch-rotatable 3D view of the selected mode. The room is drawn as a box
-/// whose six walls are colored by the mode's standing-pressure pattern
-/// (red = +, blue = −, dark = nodal lines), so you can see where the pressure
-/// peaks and nulls sit in the actual room. Drag to orbit.
+/// whose six walls are colored by the mode's standing-pressure pattern, so
+/// you can see where the pressure peaks and nulls sit in the actual room.
+/// Drag to orbit.
 ///
 /// Deliberately a hand-rolled orthographic painter (no 3D engine) to keep the
 /// app small and the frame cheap. It visualizes the analytical cuboid mode via
 /// [pressureAt]; the Phase 2 solver's fields for arbitrary shapes can plug into
 /// the same renderer later.
+///
+/// Headless: renders just the canvas (no title/card chrome), so the caller
+/// controls the surrounding section.
 class Mode3DView extends ConsumerStatefulWidget {
   const Mode3DView({super.key});
 
@@ -36,59 +40,30 @@ class _Mode3DViewState extends ConsumerState<Mode3DView> {
     final room = ref.watch(roomProvider);
 
     if (index == null || index >= modes.length) {
-      return const Card(
-        margin: EdgeInsets.all(12),
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Center(child: Text('Select a mode to see it in 3D')),
-        ),
+      return const Center(
+        child: Text('Select a mode to see it in 3D',
+            style: TextStyle(color: AppColors.textMuted)),
       );
     }
 
     final mode = modes[index];
 
-    return Card(
-      margin: const EdgeInsets.all(12),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '3D — mode (${mode.p},${mode.q},${mode.r})  '
-              '${mode.frequency.toStringAsFixed(1)} Hz  ${mode.type.label}',
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Drag to rotate • walls colored by pressure',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 8),
-            AspectRatio(
-              aspectRatio: 1.3,
-              child: GestureDetector(
-                onPanUpdate: (d) {
-                  setState(() {
-                    _yaw += d.delta.dx * 0.01;
-                    _pitch =
-                        (_pitch + d.delta.dy * 0.01).clamp(-1.5, 1.5);
-                  });
-                },
-                child: CustomPaint(
-                  painter: _Room3DPainter(
-                    mode: mode,
-                    room: room,
-                    yaw: _yaw,
-                    pitch: _pitch,
-                    edgeColor: Theme.of(context).colorScheme.onSurface,
-                  ),
-                  child: const SizedBox.expand(),
-                ),
-              ),
-            ),
-          ],
+    return GestureDetector(
+      onPanUpdate: (d) {
+        setState(() {
+          _yaw += d.delta.dx * 0.01;
+          _pitch = (_pitch + d.delta.dy * 0.01).clamp(-1.5, 1.5);
+        });
+      },
+      child: CustomPaint(
+        painter: _Room3DPainter(
+          mode: mode,
+          room: room,
+          yaw: _yaw,
+          pitch: _pitch,
+          edgeColor: Colors.white,
         ),
+        child: const SizedBox.expand(),
       ),
     );
   }
@@ -208,16 +183,8 @@ class _Room3DPainter extends CustomPainter {
     }
   }
 
-  /// Diverging blue–black–red color for a signed pressure in [-1, 1].
-  Color _pressureColor(double v) {
-    final m = v.abs().clamp(0.0, 1.0);
-    if (v >= 0) {
-      return Color.fromARGB(
-          255, (m * 255).round(), (m * 60).round(), (m * 40).round());
-    }
-    return Color.fromARGB(
-        255, (m * 40).round(), (m * 80).round(), (m * 255).round());
-  }
+  /// Diverging cyan–black–pink color for a signed pressure in [-1, 1].
+  Color _pressureColor(double v) => fieldColor(v);
 
   @override
   bool shouldRepaint(_Room3DPainter old) =>

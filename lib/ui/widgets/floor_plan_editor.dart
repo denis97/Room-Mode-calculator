@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -11,70 +12,292 @@ import '../../state/custom_room_providers.dart';
 ///   against neighbouring vertices).
 /// - **Tap** an empty spot to insert a vertex on the nearest edge.
 /// - **Long-press** near a vertex to delete it (minimum three remain).
-/// - **Pinch** (two fingers) to zoom and pan.
+/// - **Two fingers** to pan and pinch-zoom the view.
 ///
-/// Coordinates are metres on a fixed [worldSize]×[worldSize] field with a 1 m
-/// grid marked by tick crosses; edits write straight to [floorPlanProvider].
+/// One-finger vertex editing and two-finger pan/zoom are handled with raw
+/// pointer tracking (not nested `GestureDetector`s) because a single-pointer
+/// drag recognizer nested inside a pan/zoom recognizer wins the gesture arena
+/// on the first finger down, before a second finger ever gets a chance to
+/// turn it into a scale gesture -- that's what silently broke pinch-to-zoom.
+///
+/// Coordinates are metres. The view starts showing a [viewSpan]×[viewSpan]
+/// field with a 1 m grid marked by tick crosses, but the field itself
+/// extends out to [maxExtent] -- pan and zoom out to reach the rest of it,
+/// it's not a hard boundary around the room you started with. Edits write
+/// straight to [floorPlanProvider].
 class FloorPlanEditor extends ConsumerStatefulWidget {
-  const FloorPlanEditor({super.key});
+  const FloorPlanEditor({super.key, this.interactive = true});
 
-  static const double worldSize = 8.0; // metres shown per axis
+  /// Metres visible across the *width* at 1x zoom -- matches
+  /// `editorWorldSize` in custom_room_providers.dart, which centers new
+  /// shapes/presets in this same initial frame.
+  static const double viewSpan = 8.0;
+
+  /// Outer clamp on vertex coordinates and how far the grid is drawn. Much
+  /// bigger than [viewSpan] so panning/zooming out reveals real extra room
+  /// to work in, not just the initially-visible square.
+  static const double maxExtent = 32.0;
+
+  /// When false, renders a static read-only preview with no gesture
+  /// handling at all -- for a small thumbnail where the caller supplies its
+  /// own tap handler (e.g. "tap to expand").
+  final bool interactive;
 
   @override
   ConsumerState<FloorPlanEditor> createState() => _FloorPlanEditorState();
 }
 
 class _FloorPlanEditorState extends ConsumerState<FloorPlanEditor> {
-  int? _dragIndex;
-  double _canvasSize = 1;
+  double _canvasWidth = 1;
+  double _canvasHeight = 1;
 
-  double get _scale => _canvasSize / FloorPlanEditor.worldSize;
+  // ---- pan/zoom view transform (screen = world*_scale*_viewScale + _viewOffset) ----
+  double _viewScale = 1.0;
+  Offset _viewOffset = Offset.zero;
+  static const double _minZoom = 0.4;
+  static const double _maxZoom = 6.0;
+
+  // ---- raw pointer tracking ----
+  final Map<int, Offset> _pointers = {};
+
+  int? _primaryPointer;
+  Offset? _downPosition;
+  bool _movedPastSlop = false;
+  bool _longPressHandled = false;
+  int? _dragIndex;
+  Timer? _longPressTimer;
+  static const double _tapSlop = 8.0;
+  static const Duration _longPressDuration = Duration(milliseconds: 500);
+
+  bool _multiTouchActive = false;
+  double _gestureStartDistance = 0;
+  Offset _gestureStartMidpoint = Offset.zero;
+  double _gestureStartViewScale = 1;
+  Offset _gestureStartViewOffset = Offset.zero;
+
+  double get _scale => _canvasWidth / FloorPlanEditor.viewSpan;
 
   Offset _worldToLocal((double, double) v) =>
       Offset(v.$1 * _scale, v.$2 * _scale);
 
   (double, double) _localToWorld(Offset p) => (
-        (p.dx / _scale).clamp(0.0, FloorPlanEditor.worldSize),
-        (p.dy / _scale).clamp(0.0, FloorPlanEditor.worldSize),
+        (p.dx / _scale).clamp(0.0, FloorPlanEditor.maxExtent),
+        (p.dy / _scale).clamp(0.0, FloorPlanEditor.maxExtent),
       );
+
+  Offset _worldToScreen((double, double) v) =>
+      _worldToLocal(v) * _viewScale + _viewOffset;
+
+  (double, double) _screenToWorld(Offset p) =>
+      _localToWorld((p - _viewOffset) / _viewScale);
 
   static const double _snapGrid = 0.25; // metres
 
-  /// Snaps a dragged vertex to a 0.25 m grid, and aligns it to a neighbour's
-  /// row or column when close — so edges lock to horizontal/vertical (90°).
+  /// Snaps a dragged vertex to a 0.25 m grid and aligns it to a neighbour's
+  /// row or column when close, so edges lock to horizontal/vertical (90°) --
+  /// but only *magnetically*, within a small capture radius around each
+  /// grid line/neighbour axis. Outside that radius the vertex tracks the
+  /// finger continuously instead of jumping between grid points every
+  /// frame. Both radii shrink as you zoom in, so a closer zoom gives finer,
+  /// less-magnetic control over exactly where a vertex lands.
   (double, double) _snap(
       (double, double) p, List<(double, double)> verts, int index) {
-    var sx = (p.$1 / _snapGrid).round() * _snapGrid;
-    var sy = (p.$2 / _snapGrid).round() * _snapGrid;
+    final gridTol = (_snapGrid * 0.3 / _viewScale).clamp(0.01, _snapGrid * 0.3);
+    final alignTol = (0.4 / _viewScale).clamp(0.03, 0.4);
+
+    var sx = p.$1, sy = p.$2;
+    final gx = (p.$1 / _snapGrid).round() * _snapGrid;
+    final gy = (p.$2 / _snapGrid).round() * _snapGrid;
+    if ((p.$1 - gx).abs() < gridTol) sx = gx;
+    if ((p.$2 - gy).abs() < gridTol) sy = gy;
+
     final n = verts.length;
     final prev = verts[(index - 1 + n) % n];
     final next = verts[(index + 1) % n];
-    const tol = 0.4; // metres — align to neighbour axis within this distance
-    if ((sx - prev.$1).abs() < tol) {
+    if ((sx - prev.$1).abs() < alignTol) {
       sx = prev.$1;
-    } else if ((sx - next.$1).abs() < tol) {
+    } else if ((sx - next.$1).abs() < alignTol) {
       sx = next.$1;
     }
-    if ((sy - prev.$2).abs() < tol) {
+    if ((sy - prev.$2).abs() < alignTol) {
       sy = prev.$2;
-    } else if ((sy - next.$2).abs() < tol) {
+    } else if ((sy - next.$2).abs() < alignTol) {
       sy = next.$2;
     }
-    final w = FloorPlanEditor.worldSize;
+    final w = FloorPlanEditor.maxExtent;
     return (sx.clamp(0.0, w), sy.clamp(0.0, w));
   }
 
-  int? _nearestVertex(Offset local, List<(double, double)> verts) {
+  /// Hit-tests in screen space (post pan/zoom) so the touch target stays a
+  /// constant finger-sized radius regardless of zoom level.
+  int? _nearestVertexScreen(Offset screenPoint, List<(double, double)> verts) {
     var best = -1;
     var bestDist = 24.0; // px hit radius
     for (var i = 0; i < verts.length; i++) {
-      final d = (local - _worldToLocal(verts[i])).distance;
+      final d = (screenPoint - _worldToScreen(verts[i])).distance;
       if (d < bestDist) {
         bestDist = d;
         best = i;
       }
     }
     return best >= 0 ? best : null;
+  }
+
+  @override
+  void dispose() {
+    _longPressTimer?.cancel();
+    super.dispose();
+  }
+
+  // ---------------- single-finger: vertex drag / tap-insert / long-press-delete ----------------
+
+  void _beginSingleFinger(Offset localPosition) {
+    final plan = ref.read(floorPlanProvider);
+    _downPosition = localPosition;
+    _movedPastSlop = false;
+    _longPressHandled = false;
+    _dragIndex = _nearestVertexScreen(localPosition, plan.vertices);
+    _longPressTimer?.cancel();
+    _longPressTimer = Timer(_longPressDuration, () {
+      if (_movedPastSlop || _downPosition == null) return;
+      final cur = ref.read(floorPlanProvider);
+      final i = _nearestVertexScreen(_downPosition!, cur.vertices);
+      if (i != null && cur.vertices.length > 3) {
+        final updated = [...cur.vertices]..removeAt(i);
+        ref.read(floorPlanProvider.notifier).state =
+            cur.copyWith(vertices: updated);
+        _dragIndex = null;
+      }
+      // Mark the long-press as handled either way -- even a deletion that
+      // didn't qualify (e.g. already at the 3-vertex minimum) shouldn't
+      // fall through to inserting a new vertex on release.
+      _longPressHandled = true;
+    });
+  }
+
+  void _updateSingleFinger(Offset localPosition) {
+    if (_downPosition == null) return;
+    if ((localPosition - _downPosition!).distance > _tapSlop) {
+      _movedPastSlop = true;
+      _longPressTimer?.cancel();
+    }
+    final i = _dragIndex;
+    if (i == null) return;
+    final plan = ref.read(floorPlanProvider);
+    final verts = plan.vertices;
+    final snapped = _snap(_screenToWorld(localPosition), verts, i);
+    final updated = [...verts]..[i] = snapped;
+    ref.read(floorPlanProvider.notifier).state =
+        plan.copyWith(vertices: updated);
+  }
+
+  void _endSingleFinger({bool tapIfUnmoved = true}) {
+    _longPressTimer?.cancel();
+    if (tapIfUnmoved &&
+        _dragIndex == null &&
+        !_movedPastSlop &&
+        !_longPressHandled &&
+        _downPosition != null) {
+      final plan = ref.read(floorPlanProvider);
+      if (_nearestVertexScreen(_downPosition!, plan.vertices) == null) {
+        _insertVertex(_screenToWorld(_downPosition!), plan);
+      }
+    }
+    _dragIndex = null;
+    _primaryPointer = null;
+    _downPosition = null;
+    _movedPastSlop = false;
+    _longPressHandled = false;
+  }
+
+  // ---------------- two-finger: pan + pinch-zoom ----------------
+
+  void _beginMultiTouch() {
+    final pts = _pointers.values.toList();
+    if (pts.length < 2) return;
+    _multiTouchActive = true;
+    _gestureStartDistance = math.max((pts[0] - pts[1]).distance, 1.0);
+    _gestureStartMidpoint = Offset.lerp(pts[0], pts[1], 0.5)!;
+    _gestureStartViewScale = _viewScale;
+    _gestureStartViewOffset = _viewOffset;
+  }
+
+  void _updateMultiTouch() {
+    if (!_multiTouchActive) {
+      _beginMultiTouch();
+      return;
+    }
+    final pts = _pointers.values.toList();
+    if (pts.length < 2) return;
+    final dist = math.max((pts[0] - pts[1]).distance, 1.0);
+    final midpoint = Offset.lerp(pts[0], pts[1], 0.5)!;
+    final newScale = (_gestureStartViewScale * (dist / _gestureStartDistance))
+        .clamp(_minZoom, _maxZoom);
+    // Keep the pre-zoom canvas point under the gesture's start midpoint
+    // fixed under the *current* midpoint -- this gives pinch-to-zoom
+    // centered on the fingers, plus panning for free (a pure 2-finger drag
+    // has dist ~= startDist, so newScale ~= startScale and the offset just
+    // tracks the midpoint's movement).
+    final k = (_gestureStartMidpoint - _gestureStartViewOffset) /
+        _gestureStartViewScale;
+    final newOffset = _clampOffset(midpoint - k * newScale, newScale);
+    setState(() {
+      _viewScale = newScale;
+      _viewOffset = newOffset;
+    });
+  }
+
+  void _endMultiTouch() {
+    _multiTouchActive = false;
+  }
+
+  Offset _clampOffset(Offset offset, double scale) {
+    const margin = 64.0;
+    final contentW = _canvasWidth * scale;
+    final contentH = _canvasHeight * scale;
+    final minDx = math.min(_canvasWidth - contentW - margin, margin);
+    final maxDx = math.max(_canvasWidth - contentW - margin, margin);
+    final minDy = math.min(_canvasHeight - contentH - margin, margin);
+    final maxDy = math.max(_canvasHeight - contentH - margin, margin);
+    return Offset(
+      offset.dx.clamp(minDx, maxDx),
+      offset.dy.clamp(minDy, maxDy),
+    );
+  }
+
+  // ---------------- raw pointer routing ----------------
+
+  void _onPointerDown(PointerDownEvent event) {
+    _pointers[event.pointer] = event.localPosition;
+    if (_pointers.length == 1) {
+      _primaryPointer = event.pointer;
+      _beginSingleFinger(event.localPosition);
+    } else if (_pointers.length == 2) {
+      _endSingleFinger(tapIfUnmoved: false);
+      _beginMultiTouch();
+    }
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    if (!_pointers.containsKey(event.pointer)) return;
+    _pointers[event.pointer] = event.localPosition;
+    if (_pointers.length >= 2) {
+      _updateMultiTouch();
+      return;
+    }
+    if (event.pointer != _primaryPointer) return;
+    _updateSingleFinger(event.localPosition);
+  }
+
+  void _onPointerUp(PointerEvent event) {
+    _pointers.remove(event.pointer);
+    if (_multiTouchActive) {
+      if (_pointers.length < 2) _endMultiTouch();
+      return;
+    }
+    if (event.pointer == _primaryPointer) {
+      _endSingleFinger();
+    }
   }
 
   @override
@@ -85,50 +308,37 @@ class _FloorPlanEditorState extends ConsumerState<FloorPlanEditor> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        _canvasSize = constraints.maxWidth;
-        return InteractiveViewer(
-          // One finger edits vertices (panEnabled off); two fingers zoom/pan.
-          panEnabled: false,
-          minScale: 1,
-          maxScale: 6,
-          boundaryMargin: const EdgeInsets.all(64),
-          child: GestureDetector(
-          onPanStart: (d) =>
-              setState(() => _dragIndex = _nearestVertex(d.localPosition, verts)),
-          onPanUpdate: (d) {
-            final i = _dragIndex;
-            if (i == null) return;
-            final snapped = _snap(_localToWorld(d.localPosition), verts, i);
-            final updated = [...verts]..[i] = snapped;
-            ref.read(floorPlanProvider.notifier).state =
-                plan.copyWith(vertices: updated);
-          },
-          onPanEnd: (_) => setState(() => _dragIndex = null),
-          onTapUp: (d) {
-            if (_nearestVertex(d.localPosition, verts) != null) return;
-            _insertVertex(_localToWorld(d.localPosition), plan);
-          },
-          onLongPressStart: (d) {
-            final i = _nearestVertex(d.localPosition, verts);
-            if (i != null && verts.length > 3) {
-              final updated = [...verts]..removeAt(i);
-              ref.read(floorPlanProvider.notifier).state =
-                  plan.copyWith(vertices: updated);
-            }
-          },
-          child: CustomPaint(
-            painter: _FloorPlanPainter(
-              vertices: verts,
-              scale: _scale,
-              gridColor: scheme.onSurface.withValues(alpha: 0.12),
-              lineColor: scheme.primary,
-              fillColor: scheme.primary.withValues(alpha: 0.12),
-              vertexColor: scheme.primary,
-              labelColor: scheme.onSurface.withValues(alpha: 0.45),
+        _canvasWidth = constraints.maxWidth;
+        _canvasHeight = constraints.maxHeight;
+        final content = ClipRect(
+          child: Transform(
+            transform: Matrix4.identity()
+              ..translateByDouble(_viewOffset.dx, _viewOffset.dy, 0, 1)
+              ..scaleByDouble(_viewScale, _viewScale, 1, 1),
+            child: CustomPaint(
+              painter: _FloorPlanPainter(
+                vertices: verts,
+                scale: _scale,
+                gridColor: scheme.onSurface.withValues(alpha: 0.12),
+                lineColor: scheme.primary,
+                fillColor: scheme.primary.withValues(alpha: 0.12),
+                vertexColor: scheme.primary,
+                labelColor: scheme.onSurface.withValues(alpha: 0.45),
+              ),
+              child: const SizedBox.expand(),
             ),
-            child: const SizedBox.expand(),
           ),
-          ),
+        );
+
+        if (!widget.interactive) return content;
+
+        return Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: _onPointerDown,
+          onPointerMove: _onPointerMove,
+          onPointerUp: _onPointerUp,
+          onPointerCancel: _onPointerUp,
+          child: content,
         );
       },
     );
@@ -191,11 +401,11 @@ class _FloorPlanPainter extends CustomPainter {
       ..color = gridColor
       ..strokeWidth = 1;
     final labelStyle = TextStyle(color: labelColor, fontSize: 9);
-    for (var m = 0; m <= FloorPlanEditor.worldSize; m++) {
+    for (var m = 0; m <= FloorPlanEditor.maxExtent; m++) {
       final p = m * scale;
       canvas.drawLine(Offset(p, 0), Offset(p, size.height), grid);
       canvas.drawLine(Offset(0, p), Offset(size.width, p), grid);
-      if (m < FloorPlanEditor.worldSize) {
+      if (m < FloorPlanEditor.maxExtent) {
         // X axis label (top) and Y axis label (left).
         _label(canvas, '${m}m', Offset(p + 2, 1), labelStyle);
         if (m > 0) _label(canvas, '${m}m', Offset(2, p + 1), labelStyle);
@@ -207,8 +417,8 @@ class _FloorPlanPainter extends CustomPainter {
       ..color = labelColor
       ..strokeWidth = 1.4;
     const t = 3.5;
-    for (var gx = 0; gx <= FloorPlanEditor.worldSize; gx++) {
-      for (var gy = 0; gy <= FloorPlanEditor.worldSize; gy++) {
+    for (var gx = 0; gx <= FloorPlanEditor.maxExtent; gx++) {
+      for (var gy = 0; gy <= FloorPlanEditor.maxExtent; gy++) {
         final cx = gx * scale, cy = gy * scale;
         canvas.drawLine(Offset(cx - t, cy), Offset(cx + t, cy), tick);
         canvas.drawLine(Offset(cx, cy - t), Offset(cx, cy + t), tick);
