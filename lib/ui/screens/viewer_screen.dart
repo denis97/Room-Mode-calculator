@@ -16,6 +16,7 @@ import '../widgets/computed_mode_axis.dart';
 import '../widgets/frequency_axis.dart';
 import '../widgets/mode_3d_view.dart';
 import '../widgets/piano_keyboard.dart';
+import '../widgets/placement_panel.dart';
 import '../widgets/pressure_map.dart';
 import '../widgets/room_quality_card.dart';
 
@@ -349,6 +350,10 @@ class _CuboidViewer extends ConsumerWidget {
           onTap: () => _showCuboidModeSheet(context, ref, modes, selected),
         ),
         const SizedBox(height: 12),
+        _DetailsExpander(
+          title: 'Speaker placement',
+          child: const PlacementPanel(),
+        ),
         _DetailsExpander(
           title: 'Keyboard — tap to hear a mode',
           child: const PianoKeyboard(),

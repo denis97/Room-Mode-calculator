@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/acoustics/mode.dart';
+import '../../state/placement_providers.dart';
 import '../../state/room_providers.dart';
 import '../mode_colors.dart';
 
@@ -18,6 +20,13 @@ class FrequencyAxis extends ConsumerWidget {
     final maxFreq = ref.watch(maxFrequencyProvider);
     final schroeder = ref.watch(schroederProvider);
     final selectedIndex = ref.watch(selectedModeIndexProvider);
+    // When placement weighting is on, bars scale by how audible each mode is
+    // from the current speaker/listener placement instead of by type alone.
+    final weights = ref.watch(placementWeightAxisProvider)
+        ? [
+            for (final e in ref.watch(modeExcitationsProvider)) e.audibility,
+          ]
+        : null;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -38,6 +47,7 @@ class FrequencyAxis extends ConsumerWidget {
               maxFreq: maxFreq,
               schroeder: schroeder,
               selectedIndex: selectedIndex,
+              weights: weights,
               textColor: Theme.of(context).colorScheme.onSurface,
             ),
           ),
@@ -73,6 +83,7 @@ class _FrequencyAxisPainter extends CustomPainter {
     required this.maxFreq,
     required this.schroeder,
     required this.selectedIndex,
+    required this.weights,
     required this.textColor,
   });
 
@@ -80,6 +91,10 @@ class _FrequencyAxisPainter extends CustomPainter {
   final double maxFreq;
   final double schroeder;
   final int? selectedIndex;
+
+  /// Per-mode audibility in [0, 1] (aligned with [modes]), or null to size
+  /// bars purely by mode type.
+  final List<double>? weights;
   final Color textColor;
 
   @override
@@ -121,11 +136,17 @@ class _FrequencyAxisPainter extends CustomPainter {
     for (var i = 0; i < modes.length; i++) {
       final mode = modes[i];
       final x = mode.frequency / maxFreq * size.width;
-      final barHeight = 18 + mode.strength / 4 * (baseY - 24);
+      var barHeight = 18 + mode.strength / 4 * (baseY - 24);
+      var alpha = selectedIndex == i ? 1.0 : 0.85;
+      final w = (weights != null && i < weights!.length) ? weights![i] : null;
+      if (w != null) {
+        // Placement-weighted: un-excited modes collapse to a ghost stub.
+        barHeight = 6 + w * (barHeight - 6);
+        alpha *= 0.2 + 0.8 * w;
+      }
       final selected = i == selectedIndex;
       final paint = Paint()
-        ..color = colorForModeType(mode.type)
-            .withValues(alpha: selected ? 1.0 : 0.85)
+        ..color = colorForModeType(mode.type).withValues(alpha: alpha)
         ..strokeWidth = selected ? 3 : 1.6;
       canvas.drawLine(Offset(x, baseY), Offset(x, baseY - barHeight), paint);
       if (selected) {
@@ -161,5 +182,6 @@ class _FrequencyAxisPainter extends CustomPainter {
       old.modes != modes ||
       old.maxFreq != maxFreq ||
       old.schroeder != schroeder ||
-      old.selectedIndex != selectedIndex;
+      old.selectedIndex != selectedIndex ||
+      !listEquals(old.weights, weights);
 }
