@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -21,7 +22,8 @@ class PlacementPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final room = ref.watch(roomProvider);
-    final speaker = ref.watch(speakerPosProvider);
+    final speakers = ref.watch(speakersProvider);
+    final stereo = ref.watch(stereoPairProvider);
     final listener = ref.watch(listenerPosProvider);
     final response = ref.watch(roomResponseProvider);
     final advisorMode = ref.watch(advisorModeProvider);
@@ -31,13 +33,38 @@ class PlacementPanel extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Row(
+          children: [
+            const Text('SPEAKERS',
+                style: TextStyle(
+                    fontSize: 9,
+                    letterSpacing: 0.8,
+                    color: AppColors.textFaint)),
+            const SizedBox(width: 10),
+            _AdvisorChip(
+              label: 'Stereo pair',
+              selected: stereo,
+              onTap: () =>
+                  ref.read(stereoPairProvider.notifier).state = true,
+            ),
+            const SizedBox(width: 6),
+            _AdvisorChip(
+              label: 'Single sub',
+              selected: !stereo,
+              onTap: () =>
+                  ref.read(stereoPairProvider.notifier).state = false,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
         _PlanView(
           room: room,
-          speaker: speaker,
+          speakers: speakers,
           listener: listener,
           grid: advisorMode == AdvisorMode.none
               ? null
               : advisorGrid.valueOrNull,
+          mirrorBestSpot: stereo && advisorMode == AdvisorMode.speaker,
           onSpeakerMoved: (p) =>
               ref.read(speakerPosProvider.notifier).state = p,
           onListenerMoved: (p) =>
@@ -46,7 +73,9 @@ class PlacementPanel extends ConsumerWidget {
         const SizedBox(height: 6),
         Row(
           children: [
-            const _LegendDot(color: _speakerColor, label: 'speaker'),
+            _LegendDot(
+                color: _speakerColor,
+                label: stereo ? 'speakers' : 'speaker'),
             const SizedBox(width: 12),
             const _LegendDot(color: _listenerColor, label: 'listener'),
             const Spacer(),
@@ -66,10 +95,10 @@ class PlacementPanel extends ConsumerWidget {
         _HeightSlider(
           label: 'Speaker height',
           color: _speakerColor,
-          fraction: speaker.fz,
+          fraction: speakers.first.fz,
           room: room,
           onChanged: (fz) => ref.read(speakerPosProvider.notifier).state =
-              speaker.copyWith(fz: fz),
+              ref.read(speakerPosProvider).copyWith(fz: fz),
         ),
         _HeightSlider(
           label: 'Ear height',
@@ -271,20 +300,26 @@ class _HeightSlider extends StatelessWidget {
 
 /// Top-down floor plan (x = length across, y = width down) with draggable
 /// speaker/listener markers and an optional flatness heatmap underneath.
+/// The first speaker is the primary; a second one is its stereo mirror and
+/// drags in lockstep (moving either repositions the pair symmetrically).
 class _PlanView extends StatefulWidget {
   const _PlanView({
     required this.room,
-    required this.speaker,
+    required this.speakers,
     required this.listener,
     required this.grid,
+    required this.mirrorBestSpot,
     required this.onSpeakerMoved,
     required this.onListenerMoved,
   });
 
   final Room room;
-  final PlacementPoint speaker;
+  final List<PlacementPoint> speakers;
   final PlacementPoint listener;
   final FlatnessGrid? grid;
+
+  /// Whether the advisor's best-spot ring should show its stereo mirror too.
+  final bool mirrorBestSpot;
   final ValueChanged<PlacementPoint> onSpeakerMoved;
   final ValueChanged<PlacementPoint> onListenerMoved;
 
@@ -292,7 +327,7 @@ class _PlanView extends StatefulWidget {
   State<_PlanView> createState() => _PlanViewState();
 }
 
-enum _DragTarget { none, speaker, listener }
+enum _DragTarget { none, speaker, speakerMirror, listener }
 
 class _PlanViewState extends State<_PlanView> {
   _DragTarget _dragging = _DragTarget.none;
@@ -310,17 +345,25 @@ class _PlanViewState extends State<_PlanView> {
             Offset(p.fx * size.width, p.fy * size.height);
 
         void moveTo(Offset local) {
+          if (_dragging == _DragTarget.none) return;
           final p = PlacementPoint(
             fx: (local.dx / size.width).clamp(0.0, 1.0),
             fy: (local.dy / size.height).clamp(0.0, 1.0),
-            fz: _dragging == _DragTarget.speaker
-                ? widget.speaker.fz
-                : widget.listener.fz,
+            fz: _dragging == _DragTarget.listener
+                ? widget.listener.fz
+                : widget.speakers.first.fz,
           );
-          if (_dragging == _DragTarget.speaker) {
-            widget.onSpeakerMoved(p);
-          } else if (_dragging == _DragTarget.listener) {
-            widget.onListenerMoved(p);
+          switch (_dragging) {
+            case _DragTarget.speaker:
+              widget.onSpeakerMoved(p);
+            case _DragTarget.speakerMirror:
+              // Dragging the right speaker repositions the pair via its
+              // reflection, keeping the setup symmetric.
+              widget.onSpeakerMoved(mirrorAcrossWidth(p));
+            case _DragTarget.listener:
+              widget.onListenerMoved(p);
+            case _DragTarget.none:
+              break;
           }
         }
 
@@ -330,16 +373,23 @@ class _PlanViewState extends State<_PlanView> {
           // the grab radius were tested against the start position.
           onPanDown: (details) {
             final local = details.localPosition;
-            final dSpeaker = (local - markerPx(widget.speaker)).distance;
-            final dListener = (local - markerPx(widget.listener)).distance;
             const grabRadius = 32.0;
-            if (dSpeaker <= dListener && dSpeaker < grabRadius) {
-              _dragging = _DragTarget.speaker;
-            } else if (dListener < grabRadius) {
-              _dragging = _DragTarget.listener;
-            } else {
-              _dragging = _DragTarget.none;
+            var best = _DragTarget.none;
+            var bestDist = grabRadius;
+            void consider(_DragTarget target, PlacementPoint p) {
+              final d = (local - markerPx(p)).distance;
+              if (d < bestDist) {
+                bestDist = d;
+                best = target;
+              }
             }
+
+            consider(_DragTarget.speaker, widget.speakers.first);
+            if (widget.speakers.length > 1) {
+              consider(_DragTarget.speakerMirror, widget.speakers[1]);
+            }
+            consider(_DragTarget.listener, widget.listener);
+            _dragging = best;
           },
           onPanStart: (details) => moveTo(details.localPosition),
           onPanUpdate: (details) => moveTo(details.localPosition),
@@ -352,9 +402,10 @@ class _PlanViewState extends State<_PlanView> {
               size: size,
               painter: _PlanPainter(
                 room: widget.room,
-                speaker: widget.speaker,
+                speakers: widget.speakers,
                 listener: widget.listener,
                 grid: widget.grid,
+                mirrorBestSpot: widget.mirrorBestSpot,
               ),
             ),
           ),
@@ -367,15 +418,17 @@ class _PlanViewState extends State<_PlanView> {
 class _PlanPainter extends CustomPainter {
   _PlanPainter({
     required this.room,
-    required this.speaker,
+    required this.speakers,
     required this.listener,
     required this.grid,
+    required this.mirrorBestSpot,
   });
 
   final Room room;
-  final PlacementPoint speaker;
+  final List<PlacementPoint> speakers;
   final PlacementPoint listener;
   final FlatnessGrid? grid;
+  final bool mirrorBestSpot;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -403,18 +456,13 @@ class _PlanPainter extends CustomPainter {
           );
         }
       }
-      // Ring the flattest spot.
+      // Ring the flattest spot (and, for a stereo sweep, its mirror — the
+      // sweep placed the pair symmetrically, so the best spot comes in twos).
       final best = bestSpot(g, 0);
-      final at = Offset(best.fx * size.width, best.fy * size.height);
-      canvas.drawCircle(
-        at,
-        7,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.6
-          ..color = Colors.white.withValues(alpha: 0.85),
-      );
-      canvas.drawCircle(at, 2, Paint()..color = Colors.white70);
+      _bestRing(canvas, size, best, 0.85);
+      if (mirrorBestSpot) {
+        _bestRing(canvas, size, mirrorAcrossWidth(best), 0.45);
+      }
     }
 
     // 1 m grid lines.
@@ -437,18 +485,52 @@ class _PlanPainter extends CustomPainter {
         ..color = Colors.white.withValues(alpha: 0.18),
     );
 
-    _marker(
-      canvas,
-      Offset(speaker.fx * size.width, speaker.fy * size.height),
-      _speakerColor,
-      'S',
-    );
-    _marker(
+    final stereo = speakers.length > 1;
+    for (var i = 0; i < speakers.length; i++) {
+      _marker(
+        canvas,
+        Offset(speakers[i].fx * size.width, speakers[i].fy * size.height),
+        _speakerColor,
+        stereo ? (i == 0 ? 'L' : 'R') : 'S',
+      );
+    }
+    _listenerMarker(
       canvas,
       Offset(listener.fx * size.width, listener.fy * size.height),
-      _listenerColor,
-      'L',
     );
+  }
+
+  void _bestRing(Canvas canvas, Size size, PlacementPoint p, double alpha) {
+    final at = Offset(p.fx * size.width, p.fy * size.height);
+    canvas.drawCircle(
+      at,
+      7,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.6
+        ..color = Colors.white.withValues(alpha: alpha),
+    );
+    canvas.drawCircle(
+        at, 2, Paint()..color = Colors.white.withValues(alpha: alpha * 0.8));
+  }
+
+  /// The listener is drawn as a ring with a center dot (a "head from above")
+  /// so it can't be confused with the lettered speaker markers.
+  void _listenerMarker(Canvas canvas, Offset at) {
+    canvas.drawCircle(
+      at,
+      13,
+      Paint()..color = _listenerColor.withValues(alpha: 0.22),
+    );
+    canvas.drawCircle(
+      at,
+      8,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.4
+        ..color = _listenerColor,
+    );
+    canvas.drawCircle(at, 3, Paint()..color = _listenerColor);
   }
 
   void _marker(Canvas canvas, Offset at, Color color, String label) {
@@ -475,9 +557,10 @@ class _PlanPainter extends CustomPainter {
   @override
   bool shouldRepaint(_PlanPainter old) =>
       old.room != room ||
-      old.speaker != speaker ||
+      !listEquals(old.speakers, speakers) ||
       old.listener != listener ||
-      old.grid != grid;
+      old.grid != grid ||
+      old.mirrorBestSpot != mirrorBestSpot;
 }
 
 class _ResponseCurveView extends ConsumerWidget {

@@ -6,11 +6,25 @@ import '../core/acoustics/room_response.dart';
 import '../core/acoustics/speaker_placement.dart';
 import 'room_providers.dart';
 
-/// Speaker position, as fractions of the room dimensions. Defaults to a
-/// typical stereo/sub spot: near the front wall, off-center, woofer height.
+/// The left (or only) speaker position, as fractions of the room
+/// dimensions. Defaults to a typical front-wall spot at woofer height.
 final speakerPosProvider = StateProvider<PlacementPoint>(
   (ref) => const PlacementPoint(fx: 0.12, fy: 0.3, fz: 0.15),
 );
+
+/// Whether the setup is a stereo pair (the default — the right speaker
+/// mirrors the left across the room's width centerline, as real stereo
+/// setups are laid out) or a single source (the subwoofer question).
+final stereoPairProvider = StateProvider<bool>((ref) => true);
+
+/// All active sources: the primary speaker plus, for a stereo pair, its
+/// mirror image. Everything downstream (excitations, response, advisor)
+/// consumes this list.
+final speakersProvider = Provider<List<PlacementPoint>>((ref) {
+  final primary = ref.watch(speakerPosProvider);
+  final stereo = ref.watch(stereoPairProvider);
+  return stereo ? [primary, mirrorAcrossWidth(primary)] : [primary];
+});
 
 /// Listener position. Defaults to the studio "38% rule": ears 38% of the
 /// room length from the front wall, centered in width, seated ear height.
@@ -27,19 +41,19 @@ final placementWeightAxisProvider = StateProvider<bool>((ref) => false);
 final modeExcitationsProvider = Provider<List<ModeExcitation>>((ref) {
   final room = ref.watch(roomProvider);
   final modes = ref.watch(modesProvider);
-  final speaker = ref.watch(speakerPosProvider);
+  final speakers = ref.watch(speakersProvider);
   final listener = ref.watch(listenerPosProvider);
-  return modeExcitations(modes, room, speaker, listener);
+  return modeExcitations(modes, room, speakers, listener);
 });
 
 /// Predicted frequency response at the listener for the current placement.
 final roomResponseProvider = Provider<ResponseCurve>((ref) {
   final room = ref.watch(roomProvider);
   final modes = ref.watch(modesProvider);
-  final speaker = ref.watch(speakerPosProvider);
+  final speakers = ref.watch(speakersProvider);
   final listener = ref.watch(listenerPosProvider);
   final maxHz = ref.watch(maxFrequencyProvider);
-  return computeRoomResponse(modes, room, speaker, listener, maxHz: maxHz);
+  return computeRoomResponse(modes, room, speakers, listener, maxHz: maxHz);
 });
 
 /// Which advisor heatmap (if any) is shown under the placement plan.
@@ -66,14 +80,18 @@ final advisorGridProvider = FutureProvider<FlatnessGrid?>((ref) async {
   final room = ref.watch(roomProvider);
   final modes = ref.watch(modesProvider);
   final maxHz = ref.watch(maxFrequencyProvider);
+  final stereo = ref.watch(stereoPairProvider);
 
   // Only the *fixed* endpoint and the sweep height matter; deliberately not
   // watching the moving endpoint's x/y, so dragging the marker being advised
   // doesn't re-run the whole sweep on every frame.
   final movingIsSpeaker = mode == AdvisorMode.speaker;
-  final fixed = movingIsSpeaker
+  final listener = movingIsSpeaker
       ? ref.watch(listenerPosProvider)
-      : ref.watch(speakerPosProvider);
+      : const PlacementPoint(fx: 0, fy: 0, fz: 0); // unused by the sweep
+  final speakers = movingIsSpeaker
+      ? const <PlacementPoint>[] // unused by the sweep
+      : ref.watch(speakersProvider);
   final movingHeight = movingIsSpeaker
       ? ref.watch(speakerPosProvider.select((p) => p.fz))
       : ref.watch(listenerPosProvider.select((p) => p.fz));
@@ -81,7 +99,10 @@ final advisorGridProvider = FutureProvider<FlatnessGrid?>((ref) async {
   final request = AdvisorRequest(
     room: room,
     modes: modes,
-    fixed: fixed,
+    sweep: movingIsSpeaker ? AdvisorSweep.speakers : AdvisorSweep.listener,
+    speakers: speakers,
+    listener: listener,
+    mirrorPair: stereo,
     movingHeightFraction: movingHeight,
     maxHz: maxHz,
   );

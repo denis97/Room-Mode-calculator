@@ -24,7 +24,8 @@ void main() {
     final container = ProviderContainer();
     addTearDown(container.dispose);
 
-    // Corner-load both endpoints: every mode fully audible.
+    // Single sub, corner-loaded at both endpoints: every mode fully audible.
+    container.read(stereoPairProvider.notifier).state = false;
     const corner = PlacementPoint(fx: 0, fy: 0, fz: 0);
     container.read(speakerPosProvider.notifier).state = corner;
     container.read(listenerPosProvider.notifier).state = corner;
@@ -38,5 +39,20 @@ void main() {
     final response = container.read(roomResponseProvider);
     expect(response.isEmpty, isFalse);
     expect(response.flatness, greaterThan(0));
+  });
+
+  test('stereo default yields a mirrored pair of sources', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    expect(container.read(stereoPairProvider), isTrue);
+    final speakers = container.read(speakersProvider);
+    expect(speakers, hasLength(2));
+    expect(speakers[1].fx, speakers[0].fx);
+    expect(speakers[1].fy, closeTo(1 - speakers[0].fy, 1e-12));
+    expect(speakers[1].fz, speakers[0].fz);
+
+    container.read(stereoPairProvider.notifier).state = false;
+    expect(container.read(speakersProvider), hasLength(1));
   });
 }

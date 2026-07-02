@@ -43,53 +43,57 @@ class PlacementPoint {
   int get hashCode => Object.hash(fx, fy, fz);
 }
 
-/// How strongly one speaker/listener pair couples to a single mode.
+/// Mirrors a placement across the room's width centerline — how a stereo
+/// pair relates: the right speaker is the left one reflected in y.
+PlacementPoint mirrorAcrossWidth(PlacementPoint p) =>
+    PlacementPoint(fx: p.fx, fy: 1 - p.fy, fz: p.fz);
+
+/// How strongly a set of speakers plus a listener couple to a single mode.
 ///
-/// A source drives mode n in proportion to the mode shape at the source
-/// position, ψₙ(source); what arrives at the listener additionally scales
-/// with ψₙ(listener). Both values are magnitudes in [0, 1]: a speaker on a
-/// mode's nodal plane ([source] = 0) cannot excite it no matter how loud it
-/// plays, and a listener on a nodal plane won't hear it even if it rings.
+/// Each source drives mode n in proportion to the mode shape at its
+/// position, ψₙ(source); a multi-speaker setup plays the same low-frequency
+/// signal from every cabinet, so the couplings add *with sign* before
+/// anything is heard — a symmetric stereo pair sits at ±ψ on every
+/// odd-order width mode and cancels it entirely. What arrives at the
+/// listener additionally scales with ψₙ(listener). Both values are
+/// normalized magnitudes in [0, 1].
 class ModeExcitation {
   const ModeExcitation({required this.source, required this.audibility});
 
-  /// |ψ(speaker)| — how strongly the speaker drives the mode.
+  /// |Σ ψ(speakerᵢ)| / n — how strongly the speakers jointly drive the mode.
   final double source;
 
-  /// |ψ(speaker) · ψ(listener)| — how strongly the mode is heard.
+  /// |Σ ψ(speakerᵢ) · ψ(listener)| / n — how strongly the mode is heard.
   final double audibility;
 }
 
-/// Per-mode excitation for the given speaker and listener placements,
+/// Per-mode excitation for the given speakers and listener placements,
 /// aligned index-for-index with [modes].
 List<ModeExcitation> modeExcitations(
   List<RoomMode> modes,
   Room room,
-  PlacementPoint speaker,
+  List<PlacementPoint> speakers,
   PlacementPoint listener,
 ) {
-  final sx = speaker.x(room), sy = speaker.y(room), sz = speaker.z(room);
+  if (speakers.isEmpty) {
+    return List.filled(
+        modes.length, const ModeExcitation(source: 0, audibility: 0));
+  }
   final lx = listener.x(room), ly = listener.y(room), lz = listener.z(room);
   return [
     for (final mode in modes)
-      _excitationFor(mode, room, sx, sy, sz, lx, ly, lz),
+      () {
+        var sum = 0.0;
+        for (final s in speakers) {
+          sum += pressureAt(mode, room,
+              x: s.x(room), y: s.y(room), z: s.z(room));
+        }
+        final source = sum.abs() / speakers.length;
+        final atListener = pressureAt(mode, room, x: lx, y: ly, z: lz);
+        return ModeExcitation(
+          source: source,
+          audibility: source * atListener.abs(),
+        );
+      }(),
   ];
-}
-
-ModeExcitation _excitationFor(
-  RoomMode mode,
-  Room room,
-  double sx,
-  double sy,
-  double sz,
-  double lx,
-  double ly,
-  double lz,
-) {
-  final atSpeaker = pressureAt(mode, room, x: sx, y: sy, z: sz);
-  final atListener = pressureAt(mode, room, x: lx, y: ly, z: lz);
-  return ModeExcitation(
-    source: atSpeaker.abs(),
-    audibility: (atSpeaker * atListener).abs(),
-  );
 }

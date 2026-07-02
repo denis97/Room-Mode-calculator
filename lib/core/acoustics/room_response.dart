@@ -6,12 +6,15 @@ import 'pressure_field.dart';
 import 'room.dart';
 import 'speaker_placement.dart';
 
-/// Predicted steady-state frequency response at a listener position, from a
-/// speaker position, via modal summation over the rigid-wall modes:
+/// Predicted steady-state frequency response at a listener position, from
+/// one or more speakers playing the same signal, via modal summation over
+/// the rigid-wall modes:
 ///
-///     p(f) = Σₙ εₙ · ψₙ(src) · ψₙ(lis) / ((fₙ² − f²) + j·f·fₙ/Qₙ)
+///     p(f) = Σₙ εₙ · [Σₛ ψₙ(srcₛ)] · ψₙ(lis) / ((fₙ² − f²) + j·f·fₙ/Qₙ)
 ///
-/// where ψₙ is the mode shape, εₙ = ∏(2 for each non-zero index) is the
+/// The inner sum over sources is signed — a coherent pair straddling a
+/// nodal plane cancels that mode — where ψₙ is the mode shape,
+/// εₙ = ∏(2 for each non-zero index) is the
 /// modal normalization (1/Λₙ for cosine modes), and the quality factor
 /// follows from the room's reverberation time, Qₙ ≈ fₙ·RT60 / 2.2 — the
 /// familiar RT60 = 2.2/Δf₃dB relation. The (0,0,0) "pressure" mode is
@@ -52,20 +55,20 @@ class ResponseCurve {
 ResponseCurve computeRoomResponse(
   List<RoomMode> modes,
   Room room,
-  PlacementPoint speaker,
+  List<PlacementPoint> speakers,
   PlacementPoint listener, {
   double minHz = 20,
   required double maxHz,
   int points = 240,
 }) {
-  if (modes.isEmpty || maxHz <= minHz || points < 2) {
+  if (modes.isEmpty || speakers.isEmpty || maxHz <= minHz || points < 2) {
     return ResponseCurve(
       frequencies: Float64List(0),
       db: Float64List(0),
     );
   }
 
-  final coupling = _modeCoupling(modes, room, speaker, listener);
+  final coupling = _modeCoupling(modes, room, speakers, listener);
   final freqs = Float64List(points);
   final db = Float64List(points);
 
@@ -102,15 +105,17 @@ ResponseCurve computeRoomResponse(
   return ResponseCurve(frequencies: freqs, db: db);
 }
 
-/// Signed coupling εₙ·ψₙ(src)·ψₙ(lis) for each mode. The sign matters:
-/// terms interfere, which is exactly how placement creates nulls.
+/// Signed coupling εₙ·[Σₛψₙ(srcₛ)]·ψₙ(lis)/n for each mode. The signs
+/// matter twice over: terms interfere across frequency (placement nulls),
+/// and sources interfere within a mode (a symmetric pair cancels odd width
+/// modes). Normalized by the speaker count so levels stay comparable when
+/// toggling mono/stereo.
 Float64List _modeCoupling(
   List<RoomMode> modes,
   Room room,
-  PlacementPoint speaker,
+  List<PlacementPoint> speakers,
   PlacementPoint listener,
 ) {
-  final sx = speaker.x(room), sy = speaker.y(room), sz = speaker.z(room);
   final lx = listener.x(room), ly = listener.y(room), lz = listener.z(room);
   final coupling = Float64List(modes.length);
   for (var n = 0; n < modes.length; n++) {
@@ -118,8 +123,14 @@ Float64List _modeCoupling(
     final eps = (mode.p != 0 ? 2.0 : 1.0) *
         (mode.q != 0 ? 2.0 : 1.0) *
         (mode.r != 0 ? 2.0 : 1.0);
+    var sourceSum = 0.0;
+    for (final s in speakers) {
+      sourceSum +=
+          pressureAt(mode, room, x: s.x(room), y: s.y(room), z: s.z(room));
+    }
     coupling[n] = eps *
-        pressureAt(mode, room, x: sx, y: sy, z: sz) *
+        sourceSum /
+        speakers.length *
         pressureAt(mode, room, x: lx, y: ly, z: lz);
   }
   return coupling;

@@ -39,13 +39,19 @@ class FlatnessGrid {
   }
 }
 
+/// Which endpoint the advisor sweeps across the floor plan.
+enum AdvisorSweep { speakers, listener }
+
 /// Arguments bundle so the sweep can run in a background isolate via
 /// `compute` (which takes a single message argument).
 class AdvisorRequest {
   const AdvisorRequest({
     required this.room,
     required this.modes,
-    required this.fixed,
+    required this.sweep,
+    required this.speakers,
+    required this.listener,
+    required this.mirrorPair,
     required this.movingHeightFraction,
     required this.maxHz,
     this.cols = 30,
@@ -54,10 +60,18 @@ class AdvisorRequest {
 
   final Room room;
   final List<RoomMode> modes;
+  final AdvisorSweep sweep;
 
-  /// The endpoint that does not move (the listener when advising speaker
-  /// spots, the speaker when advising listening spots).
-  final PlacementPoint fixed;
+  /// Current speakers; held fixed when sweeping the listener.
+  final List<PlacementPoint> speakers;
+
+  /// Current listener; held fixed when sweeping the speakers.
+  final PlacementPoint listener;
+
+  /// When sweeping speakers: each candidate stands in for the left speaker
+  /// of a symmetric stereo pair (its mirror comes along). False sweeps a
+  /// single source (the subwoofer question).
+  final bool mirrorPair;
 
   /// Height (fraction of room height) at which candidate positions sweep.
   final double movingHeightFraction;
@@ -68,8 +82,8 @@ class AdvisorRequest {
 }
 
 /// Sweeps candidate positions across the floor plan and scores each by the
-/// flatness (dB standard deviation) of the predicted response between it
-/// and [AdvisorRequest.fixed]. Top-level so it can be handed to `compute`.
+/// flatness (dB standard deviation) of the predicted response of the
+/// resulting setup. Top-level so it can be handed to `compute`.
 FlatnessGrid computeFlatnessGrid(AdvisorRequest req) {
   final room = req.room;
   final modes = req.modes;
@@ -89,11 +103,16 @@ FlatnessGrid computeFlatnessGrid(AdvisorRequest req) {
         fy: fy,
         fz: req.movingHeightFraction,
       );
+      final speakers = req.sweep == AdvisorSweep.speakers
+          ? (req.mirrorPair ? [moving, mirrorAcrossWidth(moving)] : [moving])
+          : req.speakers;
+      final listener =
+          req.sweep == AdvisorSweep.listener ? moving : req.listener;
       final curve = computeRoomResponse(
         modes,
         room,
-        moving,
-        req.fixed,
+        speakers,
+        listener,
         maxHz: req.maxHz,
         points: req.freqPoints,
       );
