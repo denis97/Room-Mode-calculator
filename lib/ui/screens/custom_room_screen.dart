@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,7 +5,6 @@ import '../../core/geometry/room_shape.dart';
 import '../../core/numeric/modal_analysis.dart';
 import '../../state/custom_room_providers.dart';
 import '../widgets/computed_mode_3d_view.dart';
-import '../widgets/custom_mode_slice_view.dart';
 import '../widgets/floor_plan_editor.dart';
 
 /// The non-rectangular room workflow: draw a floor plan, run the on-device
@@ -79,11 +76,10 @@ class CustomRoomScreen extends ConsumerWidget {
                   min: 10,
                   max: 32,
                   divisions: 22,
-                  suffix: 'cells',
+                  suffix: '',
                   onChanged: (v) => planNotifier.state =
                       plan.copyWith(resolution: v.round()),
                 ),
-                _ResolutionHint(plan: plan),
                 _LabeledSlider(
                   label: 'Modes',
                   value: plan.modeCount.toDouble(),
@@ -95,9 +91,12 @@ class CustomRoomScreen extends ConsumerWidget {
                       plan.copyWith(modeCount: v.round()),
                 ),
                 Text(
-                  'Higher resolution = more accurate modes but slower '
-                  '(work grows ~ resolution⁴). More modes cost more too, and '
-                  'the highest ones need enough cells to be reliable.',
+                  'Higher resolution = a finer solve mesh: more accurate '
+                  'modes but slower to compute. The 3D view renders that '
+                  'same mesh directly, so it gets smoother/more detailed '
+                  'right along with the accuracy -- there\'s no separate '
+                  'visualization setting. More modes cost more too, and the '
+                  'highest ones need a fine enough mesh to be reliable.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 8),
@@ -174,7 +173,7 @@ class _ResultsSection extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Computed modes (${result.grid.cellCount} cells)',
+            Text('Computed modes (${result.mesh.triangleCount} surface faces)',
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             Wrap(
@@ -196,18 +195,9 @@ class _ResultsSection extends ConsumerWidget {
               AspectRatio(
                 aspectRatio: 1.3,
                 child: ComputedMode3DView(
-                  grid: result.grid,
+                  mesh: result.mesh,
                   mode: modes[selected],
                 ),
-              ),
-              const SizedBox(height: 12),
-              Text('Interior slice',
-                  style: Theme.of(context).textTheme.titleSmall),
-              const SizedBox(height: 4),
-              CustomModeSliceView(
-                grid: result.grid,
-                mode: modes[selected],
-                maxHeight: result.grid.nz * result.grid.h,
               ),
             ] else
               const Padding(
@@ -248,34 +238,6 @@ class _FootprintReadout extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// Live "what will the grid look like" hint: cell size and approximate grid
-/// dimensions for the current resolution, so the accuracy/cost trade-off is
-/// visible while dragging the slider.
-class _ResolutionHint extends StatelessWidget {
-  const _ResolutionHint({required this.plan});
-
-  final FloorPlan plan;
-
-  @override
-  Widget build(BuildContext context) {
-    final shape =
-        ExtrudedPolygonShape(floor: plan.vertices, height: plan.height);
-    final maxExtent =
-        [shape.extentX, shape.extentY, plan.height].reduce(math.max);
-    final h = maxExtent / plan.resolution;
-    final nx = (shape.extentX / h).ceil();
-    final ny = (shape.extentY / h).ceil();
-    final nz = (plan.height / h).ceil();
-    return Padding(
-      padding: const EdgeInsets.only(left: 96, bottom: 4),
-      child: Text(
-        'cell ≈ ${(h * 100).toStringAsFixed(0)} cm • grid up to $nx×$ny×$nz',
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
     );
   }
 }

@@ -54,6 +54,34 @@ component. `test_main.cpp`'s `testStarFdmNoSpuriousModes` locks in the exact
 case that exposed this (a star at resolution 12, which previously returned
 `[0.000, 0.000, 45.284]` Hz instead of three real modes).
 
+## The C ABI returns the solve mesh's own boundary, not a voxel grid
+
+`solve_room_modes` (`src/api/room_mode_solver.h`/`.cpp`) used to build a
+*second*, independent voxel grid purely for visualization (via
+`polygon_laplacian.h`) and resample each mode's FEM field onto it with
+nearest-node lookup. That meant "resolution" quietly controlled two
+different things at once -- FEM mesh accuracy and voxel visualization
+detail -- with no guaranteed relationship between them (a coarse voxel grid
+could visibly misrepresent a fine, accurate FEM solve, and vice versa), and
+it cost a second meshing pass plus a nearest-neighbour resample on every
+solve.
+
+Since a P1 tetrahedral mesh's field is already defined smoothly at its own
+nodes, there's no need for any of that: `solve_room_modes` now extracts the
+FEM mesh's **boundary surface** directly (the triangular faces belonging to
+exactly one tet -- an interior face is shared by two tets and cancels out,
+see `extractBoundaryFaces`) and returns those boundary nodes' positions,
+the boundary triangle indices, and each mode's field values *at those same
+nodes* -- no resampling, no second grid, no separate visualization
+resolution. `targetPerAxis` is now purely a computation-quality knob; the 3D
+view renders whatever mesh the solver actually used.
+
+The Dart FDM fallback (`lib/core/numeric/modal_analysis.dart`, used when the
+native solver is unavailable or rejects a shape) still voxelizes, since FDM
+has no other geometry to hand back -- but it converts its voxel grid's
+boundary faces into the same `RenderMesh` shape before returning, so the UI
+never has to know which solver ran.
+
 ## Mobile wiring
 
 - **Android:** fully wired. `android/app/build.gradle` builds this directory

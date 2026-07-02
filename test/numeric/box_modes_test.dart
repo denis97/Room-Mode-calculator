@@ -44,7 +44,7 @@ void main() {
     );
     for (var i = 0; i < result.modes.length; i++) {
       expect(result.modes[i].eigenvalue, greaterThan(0));
-      expect(result.modes[i].field.length, result.grid.cellCount);
+      expect(result.modes[i].field.length, result.mesh.nodeCount);
       if (i > 0) {
         expect(result.modes[i].frequency,
             greaterThanOrEqualTo(result.modes[i - 1].frequency));
