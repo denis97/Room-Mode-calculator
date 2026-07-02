@@ -73,7 +73,10 @@ For non-rectangular rooms:
   Rectangle / L / T / U shapes. Grid, edge lengths and a footprint/area/volume
   readout show the real size.
 - **On-device solver** — computes the lowest modes of the extruded room with a
-  finite-difference eigensolver, in a background isolate so the UI never blocks.
+  native FEM eigensolver (see `native/README.md`), in a background isolate so
+  the UI never blocks. Falls back to the pure-Dart finite-difference solver
+  below if the native library is unavailable (currently: iOS, until its Xcode
+  wiring is finished — see `native/README.md`).
 - **Results** — computed mode frequencies as selectable chips, a **rotatable 3D
   surface** coloured by the mode's field, and an **interior cross-section slice**
   at an adjustable height (cells outside the room are transparent).
@@ -169,10 +172,25 @@ midi = 69 + 12·log₂(f / 440)        (A4 = 440 Hz = MIDI 69)
 ## Numerical solver for arbitrary rooms
 
 This is the heart of the "Custom 3D" tab: how the app finds the modes of a room
-that has *no* closed-form solution. It solves the acoustic eigenproblem
-**numerically on a voxel grid using a finite-difference method (FDM)**. amroc
-pro solves the same physics with FEM; the maths of the problem is identical, the
-discretization differs (see [FDM vs FEM](#6-fdm-vs-fem)).
+that has *no* closed-form solution.
+
+**What actually ships:** a native FEM solver (C++, in `native/`, called via
+`dart:ffi` — see `native/README.md` for the full writeup, including a real bug
+a 5-point star test case caught and fixed). It's both faster and more accurate
+than the pure-Dart path below on non-rectangular rooms, which is the whole
+point of this tab. **The rest of this section documents the pure-Dart
+finite-difference (FDM) solver** (`lib/core/numeric/`), which remains as the
+automatic fallback (see `runFloorPlanAnalysis` in
+`lib/state/custom_room_providers.dart`) and as an independent reference
+implementation the native solver's tests check against. The physics and the
+overall approach (voxelize → matrix-free operator → Lanczos/inverse-iteration
+eigensolver) are the same story either way; only the discretization and
+language differ.
+
+It solves the acoustic eigenproblem **numerically on a voxel grid using a
+finite-difference method (FDM)**. amroc pro solves the same physics with FEM;
+the maths of the problem is identical, the discretization differs (see
+[FDM vs FEM](#6-fdm-vs-fem)).
 
 ### 1. The governing equation
 
@@ -326,11 +344,15 @@ lib/
                    notes, Schroeder, Bonello / room ratios
     geometry/      RoomShape (box, extruded polygon) + voxelizer
     numeric/       Neumann Laplacian, CG, eigensolver, modal analysis, slices
+                   (the Dart fallback path — see native/ for what ships)
   state/           Riverpod providers (cuboid + custom room)
   ui/
     screens/       root shell, cuboid home, custom-room screen
     widgets/       CustomPainter visualizations, editor, audio-backed keyboard
   audio/           on-the-fly sine-tone synthesis
+native/            C++ FEM/FDM solver, called via dart:ffi -- see native/README.md
+android/  ios/     platform projects (committed, not regenerated -- android/
+                   carries the CMake/NDK wiring that builds native/)
 test/
   acoustics/  geometry/  numeric/    unit tests anchoring the maths
 ```
@@ -341,16 +363,14 @@ unit-testable and shared by both tabs.
 ## Developing
 
 ```bash
-flutter create .    # regenerate the android/ ios/ platform folders
 flutter pub get
 flutter test
 flutter analyze
 flutter run
 ```
 
-> The platform scaffolding (`android/`, `ios/`) is generated boilerplate,
-> recreated by `flutter create .` from `pubspec.yaml`; only the Dart sources
-> under `lib/` and `test/` carry the app's logic.
+To work on the native solver directly (no Flutter/mobile toolchain needed):
+see `native/README.md`.
 
 ## Testing
 
@@ -363,20 +383,26 @@ Unit tests anchor the maths to known values, for example:
 
 ## CI & release artifacts
 
-`.github/workflows/build.yml` regenerates the platform folders, runs
-`flutter analyze` and `flutter test`, and builds:
+`.github/workflows/build.yml` has two jobs:
 
-- a **debug APK** (~70 MB — JIT + all ABIs, for quick testing),
-- **release APKs split per ABI** (~8–12 MB each — real install size),
-- a **release App Bundle** (for Play Store per-device delivery).
+- **native-test** — builds and runs the native solver's own test suite
+  standalone (`cmake && make && ctest`), independent of Flutter, as a fast
+  correctness gate.
+- **build** — installs the NDK version the Android build needs, runs
+  `flutter analyze` and `flutter test`, and builds:
+  - a **debug APK** (~70 MB — JIT + all ABIs, for quick testing),
+  - **release APKs split per ABI** (~8–12 MB each — real install size, now
+    including the compiled native solver),
+  - a **release App Bundle** (for Play Store per-device delivery).
 
 All three are uploaded as workflow artifacts.
 
 ## Roadmap
 
 Done: analytical cuboid calculator, room-quality metrics, on-device numerical
-solver for arbitrary rooms, 3D + interior-slice visualization, floor-plan editor.
+solver for arbitrary rooms (native FEM, with a Dart FDM fallback), 3D +
+interior-slice visualization, floor-plan editor.
 
-Possible next steps: body-fitted meshing for smoother boundaries, isosurface /
-volumetric 3D rendering, saving/loading rooms, SBIR (speaker-boundary
-interference), and result export.
+Possible next steps: finish the iOS native wiring (see `native/README.md`),
+isosurface / volumetric 3D rendering, saving/loading rooms, SBIR
+(speaker-boundary interference), and result export.

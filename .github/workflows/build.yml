@@ -1,9 +1,10 @@
 name: Build
 
-# Regenerates the platform folders, checks the Dart code, and compiles the app
-# (debug APK + release per-ABI APKs + release AAB) on every push / PR. Because
-# android/ and ios/ are kept out of the repo, the `flutter create .` step
-# recreates them from pubspec.yaml before building.
+# Checks the Dart code and compiles the app (debug APK + release per-ABI APKs
+# + release AAB) on every push / PR. android/ and ios/ are committed directly
+# (not regenerated in CI) because they carry custom native-build config for
+# the room-mode solver (native/) -- see native/README.md and
+# android/app/build.gradle.
 
 on:
   push:
@@ -11,6 +12,23 @@ on:
   pull_request:
 
 jobs:
+  native-test:
+    # Validates the C++ solver core (native/) on its own: no Flutter/mobile
+    # toolchain needed, so this is a fast, cheap correctness gate that runs
+    # independently of the Flutter build below.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S native -B native/build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build native/build -j
+
+      - name: Test
+        run: ctest --test-dir native/build --output-on-failure
+
   build:
     runs-on: ubuntu-latest
     steps:
@@ -21,13 +39,20 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Regenerate platform folders
-        # Only (re)generate the android/ ios/ platform code — not lib/ or test/.
-        # `flutter create` would otherwise recreate the default test/widget_test.dart
-        # (which references a `MyApp` this project doesn't define) and break analyze.
-        run: |
-          flutter create --platforms=android,ios .
-          rm -f test/widget_test.dart
+      # The Android build compiles native/ (the room-mode solver) via CMake,
+      # which needs the specific NDK version android/app/build.gradle.kts asks
+      # for (flutter.ndkVersion) actually installed, not just the base Android
+      # SDK. Using this action (rather than invoking `sdkmanager` directly)
+      # because its location/PATH isn't guaranteed the same way across runner
+      # images. The version must match FlutterExtension.kt's default ndkVersion
+      # for the Flutter version in use (subosito/flutter-action's `channel:
+      # stable` below) -- check
+      # packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt in
+      # the Flutter SDK if this build ever fails with an NDK version mismatch.
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: sdkmanager --install "ndk;28.2.13676358"
 
       - name: Install dependencies
         run: flutter pub get

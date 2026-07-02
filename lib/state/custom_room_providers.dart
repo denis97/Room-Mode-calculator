@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/constants.dart';
 import '../core/geometry/room_shape.dart';
 import '../core/numeric/modal_analysis.dart';
+import '../core/numeric/native/native_modal_solver.dart';
 
 /// A user-defined non-rectangular room: a floor polygon (metres) extruded to a
 /// height, plus the analysis settings. This is the input to the Phase 2 solver.
@@ -49,17 +50,36 @@ class FloorPlan {
 /// Runs the modal analysis for a [FloorPlan]. Top-level so it can execute in a
 /// background isolate via [compute] — the eigensolver is too heavy for the UI
 /// thread.
+///
+/// Prefers the native FEM solver (native/, see its README for why FEM beats
+/// the Dart path's finite-volume method on non-rectangular rooms) and falls
+/// back to the pure-Dart solver on any failure -- an unsupported platform
+/// (iOS until its native wiring is finished, see native/README.md), the
+/// native library failing to load, or the native solver rejecting this
+/// specific floor plan (e.g. self-intersecting). The two solvers have
+/// different failure modes, so falling back gives the best chance of a result
+/// rather than a hard error either way.
 ModalAnalysisResult runFloorPlanAnalysis(FloorPlan plan) {
   final shape = ExtrudedPolygonShape(
     floor: plan.vertices,
     height: plan.height,
   );
-  return analyzeRoomShape(
-    shape,
-    temperatureC: plan.temperatureC,
-    targetPerAxis: plan.resolution,
-    modeCount: plan.modeCount,
-  );
+
+  try {
+    return analyzeRoomShapeNative(
+      shape,
+      temperatureC: plan.temperatureC,
+      targetPerAxis: plan.resolution,
+      modeCount: plan.modeCount,
+    );
+  } catch (_) {
+    return analyzeRoomShape(
+      shape,
+      temperatureC: plan.temperatureC,
+      targetPerAxis: plan.resolution,
+      modeCount: plan.modeCount,
+    );
+  }
 }
 
 /// A named starting floor shape offered as a one-tap preset.

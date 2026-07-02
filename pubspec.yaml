@@ -18,6 +18,10 @@ dependencies:
   # Plays the generated sine tones when a mode/key is tapped.
   audioplayers: ^6.1.0
 
+  # Memory allocation helpers (calloc/malloc) for the native solver's FFI
+  # bindings (lib/core/numeric/native/).
+  ffi: ^2.1.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
