@@ -11,6 +11,7 @@ import '../widgets/floor_plan_editor.dart';
 import '../widgets/iso_room_preview.dart';
 import '../widgets/segmented_toggle.dart';
 import '../widgets/stepper_field.dart';
+import 'floor_plan_expanded_screen.dart';
 
 /// Resolution slider values at or above this switch the native solver to a
 /// finer FEM mesh level (see resolutionToFemParams in
@@ -182,16 +183,54 @@ class _CustomSetup extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: AppColors.border),
+        InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => const FloorPlanExpandedScreen(),
+            ),
           ),
-          child: const AspectRatio(
-            aspectRatio: 1.25,
-            child: FloorPlanEditor(),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: AspectRatio(
+              aspectRatio: 1.25,
+              child: Stack(
+                children: [
+                  const Positioned.fill(
+                    child: FloorPlanEditor(interactive: false),
+                  ),
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceAlt,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.open_in_full,
+                              size: 12, color: AppColors.textSecondary),
+                          SizedBox(width: 4),
+                          Text('Tap to edit',
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  color: AppColors.textSecondary)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 4),
