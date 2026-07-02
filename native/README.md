@@ -82,6 +82,73 @@ has no other geometry to hand back -- but it converts its voxel grid's
 boundary faces into the same `RenderMesh` shape before returning, so the UI
 never has to know which solver ran.
 
+## The resolution slider: what it actually buys you, and its real cost
+
+`resolutionToFemParams` (`src/api/room_mode_solver.cpp`) maps the UI's 10-32
+resolution slider to an FEM mesh refinement level and extrusion layer count.
+Calibrated against a 5×4×3 m box's *analytical* modes (closed-form, so this
+is ground truth, not a regression check against a prior solve):
+
+| Level | Box fundamental error | Notes |
+|---|---|---|
+| 0-2 | 12%-40% | Unusable at any `nz` -- not a "lower quality" option, just wrong. |
+| 3 | 0.66-0.69% | Fine on a box, but a concave floor plan (a reflex corner) needs more: the app's default L-room only gets to ~2.4-2.6% here. |
+| 4 | ~0.16% | L-room ~0.9-0.95%. The slider's **lowest** setting. |
+| 5 | ~0.04% | Comfortably under a 0.1% target. The slider's **highest** setting. |
+| 6 | ~0.01% | Measured but not used -- 5-6x the cost of level 5 for an already-tiny improvement. |
+
+Within each level, `nz` (extrusion layers) increases by exactly 1 on every
+slider tick, so every position changes the mesh. An earlier version of this
+function derived `nz` purely from `level` (`nz = 2*(level+1)`), which meant
+whole 6-tick bands of the slider produced an *identical* mesh -- dragging it
+did nothing across most of its range. That's fixed now, but it's worth
+knowing the failure mode existed, since a resolution-style slider that maps
+onto a small number of discrete mesh configurations is an easy trap to fall
+back into.
+
+**The real cost of level 5 is not the node count -- it's mesh conditioning
+near concave corners.** The app's default L-room at level 4, `nz`=6 needs
+1518 unpreconditioned CG iterations per Lanczos step vs. a same-level box's
+188 -- an 8x difference the ~2x node-count gap doesn't explain. The cause is
+element quality: `earClipTriangulate` + uniform 1-to-4 `subdivide` produces
+thinner, more skewed triangles near a reflex (concave) vertex than anywhere
+in a convex shape, and those ill-condition the stiffness matrix locally.
+`fem_lanczos.h`'s `femCG` now applies a **Jacobi (diagonal) preconditioner**
+(`femJacobiPreconditioner`, built once per eigensolve and reused across every
+Lanczos-step CG call, since it only depends on the fixed shift) -- that cuts
+the L-room's iteration count by roughly 3.5x, and is a straightforward,
+unconditional win (same answer, fewer iterations, negligible extra cost).
+Eigen's `IncompleteCholesky` was tried too (stronger per-iteration
+convergence) but its higher per-iteration cost roughly cancelled the
+iteration-count win on this problem, so it wasn't worth the added complexity
+and failure modes (a factorization that can fail to produce a valid
+preconditioner needs its own fallback path).
+
+Even preconditioned, level 5 on the default L-room takes several seconds
+(measured: 5.8-17s across its `nz` range, worse with more requested modes,
+on a desktop container -- expect it to be similar or slower on an actual
+phone). That's real and not hidden: `custom_room_screen.dart` shows an
+inline warning and requires a confirm dialog before running a solve at
+resolution ≥ 22 (where the mapping switches to level 5). The `_LabeledSlider`
+threshold constant `_slowResolutionThreshold` must stay in sync with this
+function's own `step < 12` cutoff.
+
+**Follow-up, not attempted here:** the actual fix for the conditioning
+problem is better mesh quality near reflex corners, not a stronger linear
+solver. Two directions:
+- **Adaptive/quality-bounded refinement** (e.g. Ruppert-style constrained
+  Delaunay refinement with a minimum-angle guarantee) instead of uniform
+  1-to-4 subdivision -- refines only where it's needed (near the corner) and
+  avoids creating slivers in the first place. This directly targets the
+  measured root cause and is the more promising direction.
+- **P2 (quadratic) tetrahedra** instead of P1 -- higher-order elements need
+  fewer DOFs for the same *global* accuracy, but a thin P2 tet is still a
+  thin tet: this doesn't address element-quality conditioning near the
+  corner specifically, and the assembly/DOF-numbering/boundary-extraction
+  changes required are substantially more invasive than switching the
+  triangulation strategy. Worth it eventually for the accuracy-per-DOF gain,
+  but it's the wrong first lever for *this* problem.
+
 ## Mobile wiring
 
 - **Android:** fully wired. `android/app/build.gradle` builds this directory

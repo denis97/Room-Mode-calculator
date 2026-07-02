@@ -34,23 +34,60 @@ NativeSolveResult* makeError(const char* message) {
 // lowest slice of any discretization's spectrum is trustworthy. Calibrated
 // against a 5x3 m L-room requesting 8 modes: 18 nodes gave 31% error on the
 // fundamental; >=120 nodes (15 * modeCount) brought the worst-case error
-// under ~10% and the fundamental under 1%.
+// under ~10% and the fundamental under 1%. The resolution table below
+// already clears this floor for every slider position at realistic mode
+// counts (see resolutionToFemParams's own comment), so in practice this
+// only guards edge cases the table wasn't calibrated against.
 constexpr int kMinNodesPerMode = 15;
 
-// Maps the UI's resolution slider to an FEM refinement level (uniform 1-to-4
-// subdivisions of the ear-clipped triangulation) and extrusion layer count,
-// then bumps the level up -- never down from what the slider asked for --
-// until the mesh has enough nodes for the requested mode count. Calibration
-// also showed [nz] barely affects accuracy compared to [level] (going from
-// 18->42 nodes via nz alone only moved the error 31.0%->30.4%), so the
-// safety margin is enforced by refining the triangulation, not by adding
-// more vertical layers.
+// Maps the UI's resolution slider (10-32, one integer per tick) to an FEM
+// refinement level (uniform 1-to-4 subdivisions of the ear-clipped
+// triangulation) and an extrusion layer count.
+//
+// Calibrated against the analytical modes of a 5x4x3 m box
+// (native/README.md has the full sweep): level 0-2 give 12%-40% error on
+// the fundamental mode regardless of [nz] -- genuinely unusable, not just
+// "lower quality" -- so the useful range starts at level 3 (0.66-0.69% error
+// on the box's fundamental). But a box is the *easy* case (no boundary to
+// approximate); a concave floor plan like the app's default L-room needs
+// more refinement for the same accuracy -- level 3 only gets the L-room's
+// fundamental to ~2.4-2.6% error, over a 2% floor. Level 4 fixes that
+// (~0.9-0.95% on the L-room, ~0.16% on the box), so the slider's lowest
+// setting is level 4. The highest setting is level 5 (~0.04% on the box's
+// fundamental, comfortably under a 0.1% ceiling).
+//
+// Level 5 is genuinely slow on a concave floor plan like the app's default
+// L-room -- mesh elements near the reflex corner are thin/skewed enough
+// that the linear solver needs far more iterations than the node count
+// alone would suggest (native/README.md has the numbers), and even with
+// Jacobi preconditioning that's 6-17+ seconds, against level 4's well under
+// 4 seconds. The UI (custom_room_screen.dart) warns and asks for
+// confirmation before running a solve at this resolution rather than hiding
+// that cost. The proper fix is better mesh quality near concave corners
+// (angle-bounded/adaptive refinement instead of uniform subdivision, or
+// higher-order P2 elements) -- tracked as follow-up work, not attempted
+// here.
+//
+// [nz] increases by exactly 1 on every single slider tick, so every
+// position on the slider changes the mesh -- unlike the previous formula,
+// where nz was purely a function of level (nz = 2*(level+1)) and dragging
+// the slider within a 6-tick band did nothing at all.
 void resolutionToFemParams(int32_t targetPerAxis, int32_t modeCount,
                             const std::vector<Tri2D>& baseTris, double height,
                             int& level, int& nz) {
-    level = std::max(0, std::min(4, (targetPerAxis - 10) / 6));
-    nz = 2 * (level + 1);
+    int step = std::max(0, std::min(22, targetPerAxis - 10));
+    if (step < 12) {
+        level = 4;
+        nz = 6 + step;
+    } else {
+        level = 5;
+        nz = 6 + (step - 12);
+    }
 
+    // Safety net for cases the table above wasn't calibrated against (e.g. an
+    // unusually simple shape combined with a very high mode count): if this
+    // mesh still doesn't have enough nodes to plausibly support the
+    // requested mode count, bump the level further.
     const int minNodes = kMinNodesPerMode * std::max(modeCount, 1);
     while (level < 6) {
         auto tris = baseTris;

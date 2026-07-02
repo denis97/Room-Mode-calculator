@@ -7,6 +7,13 @@ import '../../state/custom_room_providers.dart';
 import '../widgets/computed_mode_3d_view.dart';
 import '../widgets/floor_plan_editor.dart';
 
+/// Resolution slider values at or above this switch the native solver to a
+/// finer FEM mesh level (see resolutionToFemParams in
+/// native/src/api/room_mode_solver.cpp) that's noticeably slower on a
+/// concave floor plan -- several seconds rather than well under one. Keep
+/// this in sync with that function's own resolution-to-level mapping.
+const int _slowResolutionThreshold = 22;
+
 /// The non-rectangular room workflow: draw a floor plan, run the on-device
 /// Phase 2 solver, and inspect the computed modes in 3D.
 class CustomRoomScreen extends ConsumerWidget {
@@ -99,11 +106,55 @@ class CustomRoomScreen extends ConsumerWidget {
                   'highest ones need a fine enough mesh to be reliable.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                if (plan.resolution >= _slowResolutionThreshold) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.warning_amber,
+                          size: 16, color: Theme.of(context).colorScheme.error),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'At this resolution, non-rectangular rooms (like this '
+                          'one) can take several seconds -- or more, on complex '
+                          'shapes with many modes -- to compute.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.error),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 8),
                 FilledButton.icon(
                   icon: const Icon(Icons.calculate),
                   label: const Text('Compute modes'),
-                  onPressed: () {
+                  onPressed: () async {
+                    if (plan.resolution >= _slowResolutionThreshold) {
+                      final proceed = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('This may take a while'),
+                          content: const Text(
+                            'At this resolution, non-rectangular rooms can take '
+                            'several seconds or more to solve -- the app will be '
+                            'busy until it finishes. Continue?',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(false),
+                              child: const Text('Cancel'),
+                            ),
+                            FilledButton(
+                              onPressed: () => Navigator.of(context).pop(true),
+                              child: const Text('Compute'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (proceed != true) return;
+                    }
                     ref.read(analysisRequestProvider.notifier).state = plan;
                     ref.read(selectedCustomModeProvider.notifier).state = null;
                   },
