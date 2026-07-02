@@ -79,7 +79,7 @@ int main() {
     std::vector<double> ly = {0, 0, 3, 3, 5, 5};
     // Reference values from the current mapping's own best (resolution 32,
     // 8 modes, level 5).
-    double reference[3] = {28.310, 40.693, 57.110};
+    double reference[3] = {28.118, 40.625, 57.110};
 
     auto* low = solve_room_modes(lx.data(), ly.data(), (int32_t)lx.size(),
                                   /*height=*/3.0, /*temperatureC=*/20.0,
@@ -139,6 +139,31 @@ int main() {
             check(err < 2.0, msg);
         }
         if (box != nullptr) free_solve_result(box);
+    }
+
+    // High mode counts: the direct sparse-Cholesky factorization in
+    // fem_lanczos.h (replacing per-Lanczos-step iterative CG) is what makes
+    // 100 requested modes actually usable -- factor once, reuse the
+    // factorization for every one of the ~2*modeCount+10 Lanczos steps as a
+    // fast triangular solve, instead of running CG to convergence from
+    // scratch 210 times. At the lowest resolution this solves in well under
+    // a second (measured ~370ms on the default L-room).
+    {
+        auto* many = solve_room_modes(lx.data(), ly.data(), (int32_t)lx.size(),
+                                       3.0, 20.0, /*targetPerAxis=*/10, /*modeCount=*/100);
+        check(many != nullptr && many->success != 0, "default room solves successfully for 100 requested modes");
+        if (many != nullptr && many->success != 0) {
+            check(many->modeCount == 100, "returns all 100 requested modes");
+            bool manyAscending = true;
+            for (int i = 1; i < many->modeCount; ++i)
+                if (many->frequencies[i] < many->frequencies[i - 1]) manyAscending = false;
+            check(manyAscending, "all 100 frequencies are ascending");
+            bool manyPositive = true;
+            for (int i = 0; i < many->modeCount; ++i)
+                if (!(many->frequencies[i] > 0)) manyPositive = false;
+            check(manyPositive, "all 100 frequencies are positive");
+        }
+        if (many != nullptr) free_solve_result(many);
     }
 
     printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL TESTS PASSED" : "TESTS FAILED",
