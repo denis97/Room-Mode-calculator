@@ -27,14 +27,39 @@ NativeSolveResult* makeError(const char* message) {
     return r;
 }
 
+// A mesh with too few nodes relative to the number of requested modes gives
+// severely wrong low-order frequencies -- not just "less precise", genuinely
+// unreliable -- because extracting many eigenvalues out of a tiny system
+// means resolving a large fraction of its whole spectrum, and only the
+// lowest slice of any discretization's spectrum is trustworthy. Calibrated
+// against a 5x3 m L-room requesting 8 modes: 18 nodes gave 31% error on the
+// fundamental; >=120 nodes (15 * modeCount) brought the worst-case error
+// under ~10% and the fundamental under 1%.
+constexpr int kMinNodesPerMode = 15;
+
 // Maps the UI's resolution slider (same meaning as the voxel grid's
 // targetPerAxis) to an FEM refinement level (uniform 1-to-4 subdivisions of
-// the ear-clipped triangulation) and extrusion layer count. Heuristic, tuned
-// by eye against the star/box benchmarks -- doubling nz with each level keeps
-// element aspect ratios reasonable as the horizontal mesh refines.
-void resolutionToFemParams(int32_t targetPerAxis, int& level, int& nz) {
+// the ear-clipped triangulation) and extrusion layer count, then bumps the
+// level up -- never down from what the slider asked for -- until the mesh has
+// enough nodes for the requested mode count. Calibration also showed [nz]
+// barely affects accuracy compared to [level] (going from 18->42 nodes via
+// nz alone only moved the error 31.0%->30.4%), so the safety margin is
+// enforced by refining the triangulation, not by adding more vertical layers.
+void resolutionToFemParams(int32_t targetPerAxis, int32_t modeCount,
+                            const std::vector<Tri2D>& baseTris, double height,
+                            int& level, int& nz) {
     level = std::max(0, std::min(4, (targetPerAxis - 10) / 6));
     nz = 2 * (level + 1);
+
+    const int minNodes = kMinNodesPerMode * std::max(modeCount, 1);
+    while (level < 6) {
+        auto tris = baseTris;
+        for (int s = 0; s < level; ++s) tris = subdivide(tris);
+        auto mesh = extrudeToTets(tris, height, nz);
+        if ((int)mesh.nodes.size() >= minNodes) break;
+        level++;
+        nz = 2 * (level + 1);
+    }
 }
 
 // For each voxel cell, finds the FEM mesh node nearest to that cell's centre,
@@ -103,10 +128,11 @@ NativeSolveResult* solve_room_modes(
         poly.verts.push_back({polygonX[i], polygonY[i]});
 
     // ---- FEM solve: the true geometry, the accurate frequencies ----
+    auto baseTris = earClipTriangulate(poly);
+    if (baseTris.empty()) return makeError("Could not triangulate the floor plan");
     int level, femNz;
-    resolutionToFemParams(targetPerAxis, level, femNz);
-    auto tris = earClipTriangulate(poly);
-    if (tris.empty()) return makeError("Could not triangulate the floor plan");
+    resolutionToFemParams(targetPerAxis, modeCount, baseTris, height, level, femNz);
+    auto tris = baseTris;
     for (int s = 0; s < level; ++s) tris = subdivide(tris);
     auto femMesh = extrudeToTets(tris, height, femNz);
 
