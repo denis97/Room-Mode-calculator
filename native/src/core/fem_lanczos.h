@@ -35,13 +35,51 @@ struct FemOperator {
         for (int i = 0; i < z.size(); ++i) z[i] *= minvSqrt[i];
         return z;
     }
+
+    // Diagonal of M^{-1/2} K M^{-1/2}, used for Jacobi preconditioning.
+    Eigen::VectorXd diagonal() const {
+        Eigen::VectorXd d = K.diagonal();
+        Eigen::VectorXd out(d.size());
+        for (int i = 0; i < d.size(); ++i) out[i] = d[i] * minvSqrt[i] * minvSqrt[i];
+        return out;
+    }
 };
 
+// Jacobi (diagonal) preconditioning: cheap (O(n) to build and apply per
+// iteration) but matters a lot here, because element quality after
+// ear-clipping + subdivision is not uniform -- a concave floor plan's
+// reflex corner produces thinner/more irregular triangles nearby than a
+// plain box gets, which ill-conditions the stiffness matrix there. On a
+// 5x4x3 box vs. the app's default L-room at the same mesh level, that
+// showed up as needing ~8x more *unpreconditioned* CG iterations for the
+// same size problem (not explained by the ~2x node-count difference); the
+// diagonal preconditioner below cuts that back to roughly 2.5-3.5x.
+//
+// [precondMinv] is 1/(diag(A') + shift) -- the same for every CG solve
+// within one Lanczos run (shift is fixed), so femLanczosSmallestEigenpairs
+// builds it once via femJacobiPreconditioner and passes it in, instead of
+// this recomputing op.diagonal() (an O(nnz) sparse-matrix pass) on every one
+// of the ~2*count+10 Lanczos-step CG calls.
+inline Eigen::VectorXd femJacobiPreconditioner(const FemOperator& op, double shift) {
+    Eigen::VectorXd diag = op.diagonal();
+    Eigen::VectorXd minv(diag.size());
+    for (int i = 0; i < diag.size(); ++i) {
+        double d = diag[i] + shift;
+        minv[i] = d > 1e-300 ? 1.0 / d : 1.0;
+    }
+    return minv;
+}
+
 inline int femCG(const FemOperator& op, const Eigen::VectorXd& b, Eigen::VectorXd& x,
-                  double shift, double tol = 1e-9, int maxIter = 5000) {
+                  const Eigen::VectorXd& minv, double shift, double tol = 1e-9,
+                  int maxIter = 5000) {
     int n = (int)b.size();
     x = Eigen::VectorXd::Zero(n);
-    Eigen::VectorXd r = b, p = b, ap;
+
+    Eigen::VectorXd r = b;
+    Eigen::VectorXd z = r.cwiseProduct(minv);
+    Eigen::VectorXd p = z, ap;
+    double rzOld = r.dot(z);
     double rsOld = r.dot(r);
     double bNorm = std::sqrt(b.dot(b));
     if (bNorm == 0) return 0;
@@ -51,14 +89,17 @@ inline int femCG(const FemOperator& op, const Eigen::VectorXd& b, Eigen::VectorX
         ap = op.apply(p) + shift * p;
         double pap = p.dot(ap);
         if (pap <= 0) break;
-        double alpha = rsOld / pap;
+        double alpha = rzOld / pap;
         x += alpha * p;
         r -= alpha * ap;
-        double rsNew = r.dot(r);
-        double beta = rsNew / rsOld;
-        p = r + beta * p;
-        rsOld = rsNew;
+        rsOld = r.dot(r);
         iter++;
+        if (rsOld <= threshold) break;
+        z = r.cwiseProduct(minv);
+        double rzNew = r.dot(z);
+        double beta = rzNew / rzOld;
+        p = z + beta * p;
+        rzOld = rzNew;
     }
     return iter;
 }
@@ -90,6 +131,7 @@ inline std::vector<FemEigenPair> femLanczosSmallestEigenpairs(
     int m = std::min(subspaceSize, n - (int)nullVecs.size());
     std::vector<Eigen::VectorXd> V(m);
     std::vector<double> alpha(m, 0.0), beta(m, 0.0);
+    Eigen::VectorXd jacobiMinv = femJacobiPreconditioner(op, shift);
 
     std::mt19937 rng(seed);
     std::uniform_real_distribution<double> dist(-1.0, 1.0);
@@ -101,7 +143,7 @@ inline std::vector<FemEigenPair> femLanczosSmallestEigenpairs(
 
     for (int j = 0; j < m; ++j) {
         Eigen::VectorXd w;
-        femCG(op, V[j], w, shift, cgTol);
+        femCG(op, V[j], w, jacobiMinv, shift, cgTol);
         deflate(w);
 
         alpha[j] = w.dot(V[j]);
