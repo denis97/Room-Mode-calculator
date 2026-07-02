@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/geometry/render_mesh.dart';
 import '../../core/numeric/modal_analysis.dart';
+import '../app_theme.dart';
 
 /// A touch-rotatable 3D view of a computed (arbitrary-shape) mode. Renders
 /// the room's boundary surface -- the native FEM solver's own solve-mesh
@@ -150,15 +151,7 @@ class _MeshFieldPainter extends CustomPainter {
     canvas.drawVertices(vertices, ui.BlendMode.srcOver, Paint());
   }
 
-  Color _pressureColor(double v) {
-    final m = v.abs().clamp(0.0, 1.0);
-    if (v >= 0) {
-      return Color.fromARGB(
-          255, (m * 255).round(), (m * 60).round(), (m * 40).round());
-    }
-    return Color.fromARGB(
-        255, (m * 40).round(), (m * 80).round(), (m * 255).round());
-  }
+  Color _pressureColor(double v) => fieldColor(v);
 
   @override
   bool shouldRepaint(_MeshFieldPainter old) =>

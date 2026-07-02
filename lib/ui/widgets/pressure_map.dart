@@ -9,16 +9,19 @@ import '../../core/acoustics/mode.dart';
 import '../../core/acoustics/pressure_field.dart';
 import '../../core/acoustics/room.dart';
 import '../../state/room_providers.dart';
+import '../app_theme.dart';
 
 /// Shows the 2D standing-pressure pattern of the selected mode over a
-/// horizontal slice of the room. Pressure is drawn as a diverging heatmap
-/// (blue = negative, black ≈ node, red = positive). A slider moves the slice
-/// height. Antinodes appear at the walls; nodal lines are where the pattern
-/// passes through black.
+/// horizontal slice of the room. Pressure is drawn as the shared diverging
+/// heatmap (cyan = negative, near-black ≈ node, pink-red = positive). A
+/// slider moves the slice height. Antinodes appear at the walls; nodal lines
+/// are where the pattern passes through black.
 ///
 /// The heatmap image is cached and only re-rendered when the mode, room, or
 /// slice height actually changes — so unrelated rebuilds (e.g. editing the
 /// room while another mode is selected) don't trigger a re-decode.
+///
+/// Headless: renders content only, no card chrome.
 class PressureMap extends ConsumerStatefulWidget {
   const PressureMap({super.key});
 
@@ -39,14 +42,9 @@ class _PressureMapState extends ConsumerState<PressureMap> {
     final sliceHeight = ref.watch(sliceHeightProvider);
 
     if (index == null || index >= modes.length) {
-      return const Card(
-        margin: EdgeInsets.all(12),
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Center(
-            child: Text('Select a mode to see its pressure pattern'),
-          ),
-        ),
+      return const Center(
+        child: Text('Select a mode to see its pressure pattern',
+            style: TextStyle(color: AppColors.textMuted)),
       );
     }
 
@@ -57,51 +55,41 @@ class _PressureMapState extends ConsumerState<PressureMap> {
       _render(mode, room, sliceHeight, key);
     }
 
-    return Card(
-      margin: const EdgeInsets.all(12),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Pressure — mode (${mode.p},${mode.q},${mode.r})  '
-              '${mode.frequency.toStringAsFixed(1)} Hz  ${mode.type.label}',
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Top-down slice • length → horizontal, width → vertical',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 8),
-            AspectRatio(
-              aspectRatio: room.length / room.width,
-              child: _image == null
-                  ? const Center(child: CircularProgressIndicator())
-                  : CustomPaint(
-                      painter: _ImagePainter(_image!),
-                      child: const SizedBox.expand(),
-                    ),
-            ),
-            Row(
-              children: [
-                const Text('Slice height'),
-                Expanded(
-                  child: Slider(
-                    value: sliceHeight.clamp(0, room.height),
-                    min: 0,
-                    max: room.height,
-                    onChanged: (v) =>
-                        ref.read(sliceHeightProvider.notifier).state = v,
-                  ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Top-down slice — length → horizontal, width → vertical',
+          style: const TextStyle(fontSize: 11, color: AppColors.textFaint),
+        ),
+        const SizedBox(height: 8),
+        AspectRatio(
+          aspectRatio: room.length / room.width,
+          child: _image == null
+              ? const Center(child: CircularProgressIndicator())
+              : CustomPaint(
+                  painter: _ImagePainter(_image!),
+                  child: const SizedBox.expand(),
                 ),
-                Text('${sliceHeight.toStringAsFixed(2)} m'),
-              ],
+        ),
+        Row(
+          children: [
+            const Text('Slice height',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+            Expanded(
+              child: Slider(
+                value: sliceHeight.clamp(0, room.height),
+                min: 0,
+                max: room.height,
+                onChanged: (v) =>
+                    ref.read(sliceHeightProvider.notifier).state = v,
+              ),
             ),
+            Text('${sliceHeight.toStringAsFixed(2)} m',
+                style: monoStyle(fontSize: 12)),
           ],
         ),
-      ),
+      ],
     );
   }
 
@@ -139,11 +127,11 @@ class _PressureMapState extends ConsumerState<PressureMap> {
 
     final pixels = Uint8List(cols * rows * 4);
     for (var i = 0; i < grid.values.length; i++) {
-      final color = _divergingColor(grid.values[i]);
+      final color = fieldColor(grid.values[i]);
       final o = i * 4;
-      pixels[o] = color.$1; // R
-      pixels[o + 1] = color.$2; // G
-      pixels[o + 2] = color.$3; // B
+      pixels[o] = (color.r * 255).round(); // R
+      pixels[o + 1] = (color.g * 255).round(); // G
+      pixels[o + 2] = (color.b * 255).round(); // B
       pixels[o + 3] = 255; // A
     }
 
@@ -158,16 +146,6 @@ class _PressureMapState extends ConsumerState<PressureMap> {
     return completer.future;
   }
 
-  /// Maps a signed pressure value in [-1, 1] to a blue–black–red diverging
-  /// colour. Magnitude near zero (nodes) renders dark.
-  (int, int, int) _divergingColor(double v) {
-    final m = v.abs().clamp(0.0, 1.0);
-    if (v >= 0) {
-      return ((m * 255).round(), (m * 60).round(), (m * 40).round());
-    } else {
-      return ((m * 40).round(), (m * 80).round(), (m * 255).round());
-    }
-  }
 
   @override
   void dispose() {
