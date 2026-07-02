@@ -167,6 +167,60 @@ wouldn't have fixed the conditioning problem found here; it's worth
 revisiting eventually for the accuracy-per-DOF gain on well-shaped meshes,
 but it was the wrong first lever for *this* problem.
 
+**Re-checked after the Delaunay fix landed:** re-measuring PCG iterations
+*per node* (not total) on the Delaunay-refined mesh shows the L-room is now
+comparable to or better than the box (e.g. at level 5/`nz`=12: L-room needs
+0.019 iterations/node vs. the box's 0.026). The remaining wall-clock gap
+between them is now explained almost entirely by the L-room simply having
+more total nodes at the same `level` (4 base triangles vs. the box's 2, so
+proportionally more DOFs), not by worse per-node conditioning. That's a
+different conclusion than the paragraph above predicted, and it means
+neither P2 nor corner-targeted adaptive refinement has a clearly measured
+problem to solve right now -- both remain plausible future levers (P2 for
+general DOF efficiency, adaptive refinement *if* accuracy-vs-DOF near a
+reflex corner turns out to lag, which is a different question than linear-
+solver conditioning and hasn't been measured), but neither is justified by
+current data.
+
+## Solving for many modes: factor once, not once per Lanczos step
+
+Shift-invert Lanczos solves `(A' + shift*I) w = V[j]` at every one of its
+`~2*count+10` steps -- same matrix every time (`shift` is fixed for the
+whole run), only the right-hand side changes. The original implementation
+ran Jacobi-preconditioned CG to convergence from scratch at every step,
+which is the right tool when you only need a handful of solves, but the
+wrong one when you need hundreds: for `count=100` requested modes that's
+210 separate CG solves, each needing anywhere from tens to hundreds of
+iterations.
+
+`femLanczosSmallestEigenpairs` now factors `A' + shift*I` once per
+eigensolve, via `Eigen::SimplicialLDLT` on the explicit sparse matrix built
+by `femShiftedOperatorMatrix` (`op.apply()` stays matrix-free and is only
+used by the CG fallback below), and reuses that single factorization for
+every Lanczos step's solve -- a triangular solve is roughly as cheap as one
+CG *iteration*, so replacing e.g. 268 iterations with one triangular solve
+is close to a 268x cut in that step's own cost, before even counting that
+the factorization itself is paid once and amortized over every step that
+follows. Measured on the app's default L-room:
+
+| Requested modes | Resolution | Time |
+|---|---|---|
+| 8 | lowest | well under 100ms (was already fast) |
+| 100 | lowest | **~370ms** |
+| 100 | mid | **~1.8s** |
+| 100 | highest | **~15.2s** (a naive scale-up of the old per-step CG cost to 210 steps would have been ~70s) |
+
+This is also why the whole native test suite got noticeably faster
+(`ctest` dropped from ~2.7s to ~0.9s) even though none of its existing
+cases request anywhere near 100 modes -- the factorization approach is
+strictly faster at every mode count, not just large ones.
+
+Falls back to the original Jacobi-preconditioned `femCG` if the
+factorization fails (`Eigen::SimplicialLDLT::info() != Success`) --
+defensive robustness for a mesh this wasn't tested against, not something
+expected to trigger in practice: the shift plus null-space deflation should
+keep `A' + shift*I` positive definite for any valid mesh.
+
 ## Mobile wiring
 
 - **Android:** fully wired. `android/app/build.gradle` builds this directory

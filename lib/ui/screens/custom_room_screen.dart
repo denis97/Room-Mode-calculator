@@ -91,8 +91,8 @@ class CustomRoomScreen extends ConsumerWidget {
                   label: 'Modes',
                   value: plan.modeCount.toDouble(),
                   min: 4,
-                  max: 20,
-                  divisions: 16,
+                  max: 100,
+                  divisions: 96,
                   suffix: '',
                   onChanged: (v) => planNotifier.state =
                       plan.copyWith(modeCount: v.round()),
