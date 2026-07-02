@@ -58,19 +58,15 @@ class FloorPlanExpandedScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Expanded(
-                  child: Center(
-                    child: AspectRatio(
-                      aspectRatio: 1,
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppColors.surface,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: AppColors.border),
-                        ),
-                        child: const FloorPlanEditor(),
-                      ),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: AppColors.border),
                     ),
+                    child: const FloorPlanEditor(),
                   ),
                 ),
               ],

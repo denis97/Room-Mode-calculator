@@ -12,6 +12,7 @@ import '../../state/room_providers.dart';
 import '../app_theme.dart';
 import '../mode_colors.dart';
 import '../widgets/computed_mode_3d_view.dart';
+import '../widgets/computed_mode_axis.dart';
 import '../widgets/frequency_axis.dart';
 import '../widgets/mode_3d_view.dart';
 import '../widgets/piano_keyboard.dart';
@@ -456,6 +457,17 @@ class _CustomViewerBody extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       children: [
+        _Section(
+          title: 'Resonances — tap a peak',
+          trailing: '${modes.length} modes',
+          padding: const EdgeInsets.fromLTRB(4, 6, 4, 8),
+          child: ComputedModeAxis(
+            modes: modes,
+            selectedIndex: index,
+            onSelect: (i) => ref.read(selectedCustomModeProvider.notifier).state = i,
+          ),
+        ),
+        const SizedBox(height: 12),
         _Section(
           title: '3D pressure field',
           trailing: '${result.mesh.triangleCount} faces',

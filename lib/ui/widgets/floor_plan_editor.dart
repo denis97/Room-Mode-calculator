@@ -20,12 +20,23 @@ import '../../state/custom_room_providers.dart';
 /// on the first finger down, before a second finger ever gets a chance to
 /// turn it into a scale gesture -- that's what silently broke pinch-to-zoom.
 ///
-/// Coordinates are metres on a fixed [worldSize]×[worldSize] field with a 1 m
-/// grid marked by tick crosses; edits write straight to [floorPlanProvider].
+/// Coordinates are metres. The view starts showing a [viewSpan]×[viewSpan]
+/// field with a 1 m grid marked by tick crosses, but the field itself
+/// extends out to [maxExtent] -- pan and zoom out to reach the rest of it,
+/// it's not a hard boundary around the room you started with. Edits write
+/// straight to [floorPlanProvider].
 class FloorPlanEditor extends ConsumerStatefulWidget {
   const FloorPlanEditor({super.key, this.interactive = true});
 
-  static const double worldSize = 8.0; // metres shown per axis
+  /// Metres visible across the *width* at 1x zoom -- matches
+  /// `editorWorldSize` in custom_room_providers.dart, which centers new
+  /// shapes/presets in this same initial frame.
+  static const double viewSpan = 8.0;
+
+  /// Outer clamp on vertex coordinates and how far the grid is drawn. Much
+  /// bigger than [viewSpan] so panning/zooming out reveals real extra room
+  /// to work in, not just the initially-visible square.
+  static const double maxExtent = 32.0;
 
   /// When false, renders a static read-only preview with no gesture
   /// handling at all -- for a small thumbnail where the caller supplies its
@@ -37,12 +48,13 @@ class FloorPlanEditor extends ConsumerStatefulWidget {
 }
 
 class _FloorPlanEditorState extends ConsumerState<FloorPlanEditor> {
-  double _canvasSize = 1;
+  double _canvasWidth = 1;
+  double _canvasHeight = 1;
 
   // ---- pan/zoom view transform (screen = world*_scale*_viewScale + _viewOffset) ----
   double _viewScale = 1.0;
   Offset _viewOffset = Offset.zero;
-  static const double _minZoom = 1.0;
+  static const double _minZoom = 0.4;
   static const double _maxZoom = 6.0;
 
   // ---- raw pointer tracking ----
@@ -63,14 +75,14 @@ class _FloorPlanEditorState extends ConsumerState<FloorPlanEditor> {
   double _gestureStartViewScale = 1;
   Offset _gestureStartViewOffset = Offset.zero;
 
-  double get _scale => _canvasSize / FloorPlanEditor.worldSize;
+  double get _scale => _canvasWidth / FloorPlanEditor.viewSpan;
 
   Offset _worldToLocal((double, double) v) =>
       Offset(v.$1 * _scale, v.$2 * _scale);
 
   (double, double) _localToWorld(Offset p) => (
-        (p.dx / _scale).clamp(0.0, FloorPlanEditor.worldSize),
-        (p.dy / _scale).clamp(0.0, FloorPlanEditor.worldSize),
+        (p.dx / _scale).clamp(0.0, FloorPlanEditor.maxExtent),
+        (p.dy / _scale).clamp(0.0, FloorPlanEditor.maxExtent),
       );
 
   Offset _worldToScreen((double, double) v) =>
@@ -81,27 +93,38 @@ class _FloorPlanEditorState extends ConsumerState<FloorPlanEditor> {
 
   static const double _snapGrid = 0.25; // metres
 
-  /// Snaps a dragged vertex to a 0.25 m grid, and aligns it to a neighbour's
-  /// row or column when close — so edges lock to horizontal/vertical (90°).
+  /// Snaps a dragged vertex to a 0.25 m grid and aligns it to a neighbour's
+  /// row or column when close, so edges lock to horizontal/vertical (90°) --
+  /// but only *magnetically*, within a small capture radius around each
+  /// grid line/neighbour axis. Outside that radius the vertex tracks the
+  /// finger continuously instead of jumping between grid points every
+  /// frame. Both radii shrink as you zoom in, so a closer zoom gives finer,
+  /// less-magnetic control over exactly where a vertex lands.
   (double, double) _snap(
       (double, double) p, List<(double, double)> verts, int index) {
-    var sx = (p.$1 / _snapGrid).round() * _snapGrid;
-    var sy = (p.$2 / _snapGrid).round() * _snapGrid;
+    final gridTol = (_snapGrid * 0.3 / _viewScale).clamp(0.01, _snapGrid * 0.3);
+    final alignTol = (0.4 / _viewScale).clamp(0.03, 0.4);
+
+    var sx = p.$1, sy = p.$2;
+    final gx = (p.$1 / _snapGrid).round() * _snapGrid;
+    final gy = (p.$2 / _snapGrid).round() * _snapGrid;
+    if ((p.$1 - gx).abs() < gridTol) sx = gx;
+    if ((p.$2 - gy).abs() < gridTol) sy = gy;
+
     final n = verts.length;
     final prev = verts[(index - 1 + n) % n];
     final next = verts[(index + 1) % n];
-    const tol = 0.4; // metres — align to neighbour axis within this distance
-    if ((sx - prev.$1).abs() < tol) {
+    if ((sx - prev.$1).abs() < alignTol) {
       sx = prev.$1;
-    } else if ((sx - next.$1).abs() < tol) {
+    } else if ((sx - next.$1).abs() < alignTol) {
       sx = next.$1;
     }
-    if ((sy - prev.$2).abs() < tol) {
+    if ((sy - prev.$2).abs() < alignTol) {
       sy = prev.$2;
-    } else if ((sy - next.$2).abs() < tol) {
+    } else if ((sy - next.$2).abs() < alignTol) {
       sy = next.$2;
     }
-    final w = FloorPlanEditor.worldSize;
+    final w = FloorPlanEditor.maxExtent;
     return (sx.clamp(0.0, w), sy.clamp(0.0, w));
   }
 
@@ -230,12 +253,15 @@ class _FloorPlanEditorState extends ConsumerState<FloorPlanEditor> {
 
   Offset _clampOffset(Offset offset, double scale) {
     const margin = 64.0;
-    final contentSize = _canvasSize * scale;
-    final minX = math.min(_canvasSize - contentSize - margin, margin);
-    final maxX = math.max(_canvasSize - contentSize - margin, margin);
+    final contentW = _canvasWidth * scale;
+    final contentH = _canvasHeight * scale;
+    final minDx = math.min(_canvasWidth - contentW - margin, margin);
+    final maxDx = math.max(_canvasWidth - contentW - margin, margin);
+    final minDy = math.min(_canvasHeight - contentH - margin, margin);
+    final maxDy = math.max(_canvasHeight - contentH - margin, margin);
     return Offset(
-      offset.dx.clamp(minX, maxX),
-      offset.dy.clamp(minX, maxX),
+      offset.dx.clamp(minDx, maxDx),
+      offset.dy.clamp(minDy, maxDy),
     );
   }
 
@@ -282,7 +308,8 @@ class _FloorPlanEditorState extends ConsumerState<FloorPlanEditor> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        _canvasSize = constraints.maxWidth;
+        _canvasWidth = constraints.maxWidth;
+        _canvasHeight = constraints.maxHeight;
         final content = ClipRect(
           child: Transform(
             transform: Matrix4.identity()
@@ -374,11 +401,11 @@ class _FloorPlanPainter extends CustomPainter {
       ..color = gridColor
       ..strokeWidth = 1;
     final labelStyle = TextStyle(color: labelColor, fontSize: 9);
-    for (var m = 0; m <= FloorPlanEditor.worldSize; m++) {
+    for (var m = 0; m <= FloorPlanEditor.maxExtent; m++) {
       final p = m * scale;
       canvas.drawLine(Offset(p, 0), Offset(p, size.height), grid);
       canvas.drawLine(Offset(0, p), Offset(size.width, p), grid);
-      if (m < FloorPlanEditor.worldSize) {
+      if (m < FloorPlanEditor.maxExtent) {
         // X axis label (top) and Y axis label (left).
         _label(canvas, '${m}m', Offset(p + 2, 1), labelStyle);
         if (m > 0) _label(canvas, '${m}m', Offset(2, p + 1), labelStyle);
@@ -390,8 +417,8 @@ class _FloorPlanPainter extends CustomPainter {
       ..color = labelColor
       ..strokeWidth = 1.4;
     const t = 3.5;
-    for (var gx = 0; gx <= FloorPlanEditor.worldSize; gx++) {
-      for (var gy = 0; gy <= FloorPlanEditor.worldSize; gy++) {
+    for (var gx = 0; gx <= FloorPlanEditor.maxExtent; gx++) {
+      for (var gy = 0; gy <= FloorPlanEditor.maxExtent; gy++) {
         final cx = gx * scale, cy = gy * scale;
         canvas.drawLine(Offset(cx - t, cy), Offset(cx + t, cy), tick);
         canvas.drawLine(Offset(cx, cy - t), Offset(cx, cy + t), tick);
