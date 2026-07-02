@@ -79,7 +79,7 @@ int main() {
     std::vector<double> ly = {0, 0, 3, 3, 5, 5};
     // Reference values from the current mapping's own best (resolution 32,
     // 8 modes, level 5).
-    double reference[3] = {28.310, 40.693, 57.110};
+    double reference[3] = {28.118, 40.625, 57.110};
 
     auto* low = solve_room_modes(lx.data(), ly.data(), (int32_t)lx.size(),
                                   /*height=*/3.0, /*temperatureC=*/20.0,

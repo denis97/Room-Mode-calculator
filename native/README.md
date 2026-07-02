@@ -106,48 +106,66 @@ knowing the failure mode existed, since a resolution-style slider that maps
 onto a small number of discrete mesh configurations is an easy trap to fall
 back into.
 
-**The real cost of level 5 is not the node count -- it's mesh conditioning
-near concave corners.** The app's default L-room at level 4, `nz`=6 needs
-1518 unpreconditioned CG iterations per Lanczos step vs. a same-level box's
-188 -- an 8x difference the ~2x node-count gap doesn't explain. The cause is
-element quality: `earClipTriangulate` + uniform 1-to-4 `subdivide` produces
-thinner, more skewed triangles near a reflex (concave) vertex than anywhere
-in a convex shape, and those ill-condition the stiffness matrix locally.
-`fem_lanczos.h`'s `femCG` now applies a **Jacobi (diagonal) preconditioner**
-(`femJacobiPreconditioner`, built once per eigensolve and reused across every
-Lanczos-step CG call, since it only depends on the fixed shift) -- that cuts
-the L-room's iteration count by roughly 3.5x, and is a straightforward,
-unconditional win (same answer, fewer iterations, negligible extra cost).
-Eigen's `IncompleteCholesky` was tried too (stronger per-iteration
-convergence) but its higher per-iteration cost roughly cancelled the
-iteration-count win on this problem, so it wasn't worth the added complexity
-and failure modes (a factorization that can fail to produce a valid
-preconditioner needs its own fallback path).
+**The real cost of level 5 was not the node count -- it was mesh conditioning
+near concave corners**, and most of it was a fixable triangulation bug, not
+an inherent property of concave rooms. The app's default L-room at level 4,
+`nz`=6 needed 1518 unpreconditioned CG iterations per Lanczos step vs. a
+same-level box's 188 -- an 8x difference the ~2x node-count gap didn't
+explain. Two things were going on, found and fixed in that order:
 
-Even preconditioned, level 5 on the default L-room takes several seconds
-(measured: 5.8-17s across its `nz` range, worse with more requested modes,
-on a desktop container -- expect it to be similar or slower on an actual
-phone). That's real and not hidden: `custom_room_screen.dart` shows an
-inline warning and requires a confirm dialog before running a solve at
-resolution ≥ 22 (where the mapping switches to level 5). The `_LabeledSlider`
-threshold constant `_slowResolutionThreshold` must stay in sync with this
-function's own `step < 12` cutoff.
+1. **`fem_lanczos.h`'s `femCG` had no preconditioner at all.** Added a
+   **Jacobi (diagonal) preconditioner** (`femJacobiPreconditioner`, built
+   once per eigensolve and reused across every Lanczos-step CG call, since
+   it only depends on the fixed shift) -- cuts the L-room's iteration count
+   by roughly 3.5x, a straightforward, unconditional win (same answer, fewer
+   iterations, negligible extra cost). Eigen's `IncompleteCholesky` was
+   tried too (stronger per-iteration convergence) but its higher
+   per-iteration cost roughly cancelled the iteration-count win on this
+   problem, so it wasn't worth the added complexity and failure modes (a
+   factorization that can fail to produce a valid preconditioner needs its
+   own fallback path).
 
-**Follow-up, not attempted here:** the actual fix for the conditioning
-problem is better mesh quality near reflex corners, not a stronger linear
-solver. Two directions:
-- **Adaptive/quality-bounded refinement** (e.g. Ruppert-style constrained
-  Delaunay refinement with a minimum-angle guarantee) instead of uniform
-  1-to-4 subdivision -- refines only where it's needed (near the corner) and
-  avoids creating slivers in the first place. This directly targets the
-  measured root cause and is the more promising direction.
-- **P2 (quadratic) tetrahedra** instead of P1 -- higher-order elements need
-  fewer DOFs for the same *global* accuracy, but a thin P2 tet is still a
-  thin tet: this doesn't address element-quality conditioning near the
-  corner specifically, and the assembly/DOF-numbering/boundary-extraction
-  changes required are substantially more invasive than switching the
-  triangulation strategy. Worth it eventually for the accuracy-per-DOF gain,
-  but it's the wrong first lever for *this* problem.
+2. **`earClipTriangulate` has no quality objective.** It greedily takes the
+   first geometrically valid ear it finds, with no regard for the angles it
+   produces. Measuring the *base* (pre-subdivision) triangulation directly
+   found the actual smoking gun: the default L-room's ear-clip output has a
+   5.19 degree / 168.47 degree sliver -- and since uniform 1-to-4
+   `subdivide` splits every triangle into 4 *similar* copies (same angles,
+   smaller size), that sliver persisted **unchanged at every mesh
+   resolution**, from the 4-triangle base mesh up through 1024+ triangles.
+   It wasn't a resolution problem; it was baked in from the start. Fixed
+   with `delaunayRefine` (Lawson's edge-flip algorithm): flips interior
+   diagonals to satisfy the Delaunay condition without adding or moving any
+   points, treating the polygon's own boundary edges as fixed constraints.
+   One flip took the L-room's minimum angle from 5.19 to 38.66 degrees --
+   matching a plain box's own triangulation quality, because the defect was
+   a bad *diagonal choice*, not anything inherent to the L-room's geometry.
+   Checked against all four floor-plan presets plus a 5-point star:
+   every case improved or was already optimal (T-shape needed zero flips),
+   never regressed, area preserved exactly, 1-3 flip passes to converge.
+   `earClipTriangulate` now applies this to its own output automatically, so
+   every caller benefits without needing to remember to call it.
+
+Together these took the default L-room at level 5 (the slider's highest
+setting) from 5.8-17s down to roughly 1-8.6s across its `nz` range at the
+default mode count (worse with more requested modes) -- real, measured,
+still not fast enough to drop the UI's warning, but a substantial cut.
+`custom_room_screen.dart` still shows an inline warning and requires a
+confirm dialog before running a solve at resolution ≥ 22 (where the mapping
+switches to level 5); the `_LabeledSlider` threshold constant
+`_slowResolutionThreshold` must stay in sync with this function's own
+`step < 12` cutoff.
+
+**Remaining follow-up, not attempted here:** the Delaunay flip pass only
+reorders *existing* diagonals -- it can't do anything about triangles that
+are thin because the polygon itself is thin (a 1m-wide corridor, say),
+since no amount of reordering removes a genuinely narrow region without
+adding new points. **P2 (quadratic) tetrahedra** instead of P1 is a
+separate, independent lever -- higher-order elements need fewer DOFs for
+the same *global* accuracy -- but a thin P2 tet is still a thin tet, so it
+wouldn't have fixed the conditioning problem found here; it's worth
+revisiting eventually for the accuracy-per-DOF gain on well-shaped meshes,
+but it was the wrong first lever for *this* problem.
 
 ## Mobile wiring
 

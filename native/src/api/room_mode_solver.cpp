@@ -56,17 +56,15 @@ constexpr int kMinNodesPerMode = 15;
 // setting is level 4. The highest setting is level 5 (~0.04% on the box's
 // fundamental, comfortably under a 0.1% ceiling).
 //
-// Level 5 is genuinely slow on a concave floor plan like the app's default
-// L-room -- mesh elements near the reflex corner are thin/skewed enough
-// that the linear solver needs far more iterations than the node count
-// alone would suggest (native/README.md has the numbers), and even with
-// Jacobi preconditioning that's 6-17+ seconds, against level 4's well under
-// 4 seconds. The UI (custom_room_screen.dart) warns and asks for
+// Level 5 is still the slowest setting on a concave floor plan like the
+// app's default L-room -- even with Jacobi preconditioning and the
+// Delaunay-refined base triangulation (delaunayRefine in
+// polygon_tet_mesh.h, which fixed the *dominant* cause of slow convergence:
+// see its own comment), it's ~1-8.6 seconds across level 5's nz range on
+// the default room at the default mode count, against level 4's well under
+// 1 second. The UI (custom_room_screen.dart) warns and asks for
 // confirmation before running a solve at this resolution rather than hiding
-// that cost. The proper fix is better mesh quality near concave corners
-// (angle-bounded/adaptive refinement instead of uniform subdivision, or
-// higher-order P2 elements) -- tracked as follow-up work, not attempted
-// here.
+// that cost.
 //
 // [nz] increases by exactly 1 on every single slider tick, so every
 // position on the slider changes the mesh -- unlike the previous formula,
