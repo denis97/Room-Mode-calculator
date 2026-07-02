@@ -26,9 +26,11 @@ int main() {
     check(r != nullptr, "returns a non-null result");
     check(r->success != 0, "reports success");
     check(r->modeCount == 5, "returns the requested mode count");
-    check(r->cellCount > 0, "voxel grid has cells");
-    check(r->ci != nullptr && r->cj != nullptr && r->ck != nullptr, "grid index arrays populated");
-    check(r->neighbors != nullptr, "neighbour array populated");
+    check(r->nodeCount > 0, "boundary surface has nodes");
+    check(r->triCount > 0, "boundary surface has triangles");
+    check(r->nodeX != nullptr && r->nodeY != nullptr && r->nodeZ != nullptr,
+          "node position arrays populated");
+    check(r->triangles != nullptr, "triangle index array populated");
     check(r->frequencies != nullptr && r->fields != nullptr, "mode data populated");
 
     bool ascending = true;
@@ -40,12 +42,18 @@ int main() {
     for (int i = 0; i < r->modeCount; ++i) if (!(r->frequencies[i] > 0)) allPositive = false;
     check(allPositive, "all frequencies are positive");
 
-    // Every voxel cell's field value across every mode should be finite and
+    // Every triangle index should reference a valid node.
+    bool indicesInRange = true;
+    for (int i = 0; i < r->triCount * 3; ++i)
+        if (r->triangles[i] < 0 || r->triangles[i] >= r->nodeCount) indicesInRange = false;
+    check(indicesInRange, "triangle indices are within node range");
+
+    // Every node's field value across every mode should be finite and
     // within [-1, 1] (the eigenvectors are unit-normalized).
     bool fieldsSane = true;
     for (int m = 0; m < r->modeCount; ++m)
-        for (int c = 0; c < r->cellCount; ++c) {
-            double v = r->fields[(size_t)m * r->cellCount + c];
+        for (int i = 0; i < r->nodeCount; ++i) {
+            double v = r->fields[(size_t)m * r->nodeCount + i];
             if (!std::isfinite(v) || v < -1.0001 || v > 1.0001) fieldsSane = false;
         }
     check(fieldsSane, "field values are finite and in [-1, 1]");
