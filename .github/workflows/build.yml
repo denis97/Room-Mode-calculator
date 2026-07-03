@@ -88,31 +88,19 @@ jobs:
           if-no-files-found: error
 
       # ── Diagnostic variants for the release-only startup crash ──
-      # Each split isolates one axis; install each (after a full uninstall)
-      # and note which launch:
-      #   no-ads      → Dart ads-init path compiled out
-      #   no-minify   → release AOT but R8/resource-shrinking off
-      #   debug       → no R8, JIT — if only this works, it's shrinker+AOT
-      - name: Build no-ads diagnostic APKs (split per ABI)
-        run: flutter build apk --release --split-per-abi --dart-define=ADS_DISABLED=true
+      # Established so far: debug (fat, JIT) launches; split release APKs
+      # crash even with R8 off and the Dart ads path compiled out. Remaining
+      # axes: per-ABI splitting vs release AOT itself. The fat release APK
+      # separates them: fat works → split packaging; fat crashes → AOT/
+      # release mode.
+      - name: Build fat release APK (all ABIs, no split)
+        run: flutter build apk --release
 
-      - name: Upload no-ads diagnostic APKs
+      - name: Upload fat release APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-apks-no-ads
-          path: build/app/outputs/flutter-apk/app-*-release.apk
-          if-no-files-found: error
-
-      - name: Build no-minify diagnostic APKs (split per ABI)
-        env:
-          NO_MINIFY: "true"
-        run: flutter build apk --release --split-per-abi
-
-      - name: Upload no-minify diagnostic APKs
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-apks-no-minify
-          path: build/app/outputs/flutter-apk/app-*-release.apk
+          name: app-release-apk-fat
+          path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
 
       - name: Build debug diagnostic APK
