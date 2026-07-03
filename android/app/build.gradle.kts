@@ -93,6 +93,13 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            // Diagnostic escape hatch: NO_MINIFY=true builds a release APK
+            // with R8 and resource shrinking off, to bisect shrinker-caused
+            // crashes from everything else (see build.yml).
+            if (System.getenv("NO_MINIFY") == "true") {
+                isMinifyEnabled = false
+                isShrinkResources = false
+            }
         }
     }
 }

@@ -87,10 +87,12 @@ jobs:
           path: build/app/outputs/flutter-apk/app-*-release.apk
           if-no-files-found: error
 
-      # Diagnostic twin of the build above with the ads/consent startup path
-      # compiled out (see adsDisabledByBuild). Installing both bisects any
-      # release-only startup crash: no-ads works + ads crashes → the ads
-      # init path is the culprit; both crash → it's something else.
+      # ── Diagnostic variants for the release-only startup crash ──
+      # Each split isolates one axis; install each (after a full uninstall)
+      # and note which launch:
+      #   no-ads      → Dart ads-init path compiled out
+      #   no-minify   → release AOT but R8/resource-shrinking off
+      #   debug       → no R8, JIT — if only this works, it's shrinker+AOT
       - name: Build no-ads diagnostic APKs (split per ABI)
         run: flutter build apk --release --split-per-abi --dart-define=ADS_DISABLED=true
 
@@ -99,4 +101,26 @@ jobs:
         with:
           name: app-release-apks-no-ads
           path: build/app/outputs/flutter-apk/app-*-release.apk
+          if-no-files-found: error
+
+      - name: Build no-minify diagnostic APKs (split per ABI)
+        env:
+          NO_MINIFY: "true"
+        run: flutter build apk --release --split-per-abi
+
+      - name: Upload no-minify diagnostic APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apks-no-minify
+          path: build/app/outputs/flutter-apk/app-*-release.apk
+          if-no-files-found: error
+
+      - name: Build debug diagnostic APK
+        run: flutter build apk --debug
+
+      - name: Upload debug diagnostic APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error

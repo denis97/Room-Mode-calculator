@@ -42,6 +42,13 @@
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
             android:value="${admobAppId}" />
+        <!-- Defer the ads SDK's app-measurement work from process start to
+             the first ad request. We initialize ads lazily from Dart anyway,
+             and the eager provider init is a documented source of startup
+             crashes/ANRs. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.DELAY_APP_MEASUREMENT_INIT"
+            android:value="true" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
