@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../monetization/ads_service.dart';
+import '../../monetization/monetization_providers.dart';
+import '../widgets/pro_sheet.dart';
+
 import '../../core/acoustics/speed_of_sound.dart';
 import '../../core/geometry/room_shape.dart';
 import '../../state/custom_room_providers.dart';
@@ -29,6 +33,14 @@ class SetupScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final kind = ref.watch(roomKindProvider);
+    final adsEnabled = ref.watch(adsEnabledProvider);
+    final showProEntry = ref.watch(adsSupportedProvider);
+
+    // Warm up the next interstitial so the transition to the viewer never
+    // waits on a network load. Idempotent; no-op when ads are off.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(adsServiceProvider).preloadInterstitial(adsEnabled);
+    });
 
     return Scaffold(
       body: DecoratedBox(
@@ -38,8 +50,7 @@ class SetupScreen extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
             children: [
               Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
@@ -50,9 +61,26 @@ class SetupScreen extends ConsumerWidget {
                       letterSpacing: -0.5,
                     ),
                   ),
-                  Text('SETUP',
-                      style: monoStyle(
-                          fontSize: 11, color: AppColors.textFaint)),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      if (showProEntry)
+                        InkWell(
+                          onTap: () => showProSheet(context),
+                          borderRadius: BorderRadius.circular(10),
+                          child: const Padding(
+                            padding: EdgeInsets.all(6),
+                            child: Icon(Icons.workspace_premium_outlined,
+                                size: 18, color: AppColors.textFaint),
+                          ),
+                        ),
+                      const SizedBox(width: 4),
+                      Text('SETUP',
+                          style: monoStyle(
+                              fontSize: 11, color: AppColors.textFaint)),
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 4),
@@ -161,8 +189,12 @@ class _CuboidSetup extends ConsumerWidget {
         const SizedBox(height: 16),
         _CalculateButton(
           label: 'Calculate ${modes.length} modes',
-          onPressed: () =>
-              ref.read(appScreenProvider.notifier).state = AppScreen.viewer,
+          onPressed: () {
+            ref
+                .read(adsServiceProvider)
+                .maybeShowInterstitial(ref.read(adsEnabledProvider));
+            ref.read(appScreenProvider.notifier).state = AppScreen.viewer;
+          },
         ),
       ],
     );
@@ -351,6 +383,9 @@ class _CustomSetup extends ConsumerWidget {
               );
               if (proceed != true) return;
             }
+            ref
+                .read(adsServiceProvider)
+                .maybeShowInterstitial(ref.read(adsEnabledProvider));
             ref.read(analysisRequestProvider.notifier).state = plan;
             ref.read(selectedCustomModeProvider.notifier).state = null;
             ref.read(appScreenProvider.notifier).state = AppScreen.viewer;

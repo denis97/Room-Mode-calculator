@@ -1,6 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Ads (Google Mobile Ads SDK) need network access; nothing else in the
+         app does — the solvers are fully on-device. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <application
-        android:label="room_mode_calculator"
+        android:label="Room Modes"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -30,6 +34,14 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- AdMob application ID. The default is Google's public *test* app
+             ID; the real one is injected per-build via the ADMOB_APP_ID
+             Gradle property (see android/app/build.gradle.kts and the
+             release workflow). Building with the test ID is safe — it just
+             serves test ads. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="${admobAppId}" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

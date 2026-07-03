@@ -389,19 +389,83 @@ Unit tests anchor the maths to known values, for example:
   standalone (`cmake && make && ctest`), independent of Flutter, as a fast
   correctness gate.
 - **build** — installs the NDK version the Android build needs, runs
-  `flutter analyze` and `flutter test`, and builds:
-  - a **debug APK** (~70 MB — JIT + all ABIs, for quick testing),
-  - **release APKs split per ABI** (~8–12 MB each — real install size, now
-    including the compiled native solver),
-  - a **release App Bundle** (for Play Store per-device delivery).
+  `flutter analyze` and `flutter test`, and builds **release APKs split per
+  ABI** (~8–12 MB each — real install size, including the compiled native
+  solver), uploaded as workflow artifacts.
 
-All three are uploaded as workflow artifacts.
+The Play Store **App Bundle** is built by a separate tag-triggered workflow
+(`release.yml`) — see "Shipping to Google Play" below.
+
+## Shipping to Google Play
+
+The repo is release-ready on the code side; shipping needs a few one-time
+account-side steps.
+
+### Signing
+
+Release builds sign with the **debug key unless** `android/key.properties`
+exists (git-ignored). To create the upload keystore once:
+
+```bash
+keytool -genkey -v -keystore upload-keystore.jks -keyalg RSA \
+        -keysize 2048 -validity 10000 -alias upload
+```
+
+then write `android/key.properties`:
+
+```properties
+storeFile=upload-keystore.jks     # path relative to android/
+storePassword=...
+keyAlias=upload
+keyPassword=...
+```
+
+`.github/workflows/release.yml` builds a **signed AAB on every `v*` tag**.
+It needs these repository secrets: `UPLOAD_KEYSTORE_BASE64`
+(`base64 -w0 upload-keystore.jks`), `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
+`KEY_PASSWORD`, and optionally `ADMOB_APP_ID`.
+
+### Monetization wiring
+
+One free app: ads for everyone, a one-time **`pro_no_ads`** in-app product
+removes them (`lib/monetization/`). Ads only appear as a banner inside the
+custom-solve wait overlay and as a frequency-capped interstitial (max 3 per
+session, ≥3 min apart) when opening the viewer. GDPR consent runs through
+Google UMP before ad init.
+
+Every checkout builds with **Google's test ad IDs** — safe by construction.
+Production IDs are injected at release time only:
+
+- AdMob **app ID** → `ADMOB_APP_ID` secret (manifest placeholder),
+- ad **unit IDs** → `--dart-define=ADMOB_BANNER_UNIT=…` /
+  `ADMOB_INTERSTITIAL_UNIT=…`,
+- the `pro_no_ads` product must be created in Play Console → Monetize →
+  In-app products (price ~€3–5), matching `kProProductId`.
+
+The launcher icon set regenerates from `assets/icon/` via
+`dart run flutter_launcher_icons`; the master art comes from
+`tool/make_icon.py`.
+
+### Play Console checklist (account side)
+
+1. Developer account; **personal accounts must run a 14-day closed test with
+   12 testers before production** — start this first.
+2. Store listing: title, descriptions, ≥2 screenshots, 1024×500 feature
+   graphic.
+3. **Privacy policy URL** (required with AdMob) + Data safety form
+   (declares ad-related device identifiers).
+4. Content rating questionnaire; target audience 13+ (ads must not be
+   child-directed).
+5. Upload the tagged AAB from the release workflow, roll out to the closed
+   track, then production.
 
 ## Roadmap
 
 Done: analytical cuboid calculator, room-quality metrics, on-device numerical
 solver for arbitrary rooms (native FEM, with a Dart FDM fallback), 3D +
-interior-slice visualization, floor-plan editor.
+interior-slice visualization, floor-plan editor, speaker/listener placement
+with stereo-pair modeling, Play-release scaffolding (signing, icon, ads +
+Pro unlock).
 
 Possible next steps: finish the iOS native wiring (see `native/README.md`),
 isosurface / volumetric 3D rendering, saving/loading rooms, SBIR
