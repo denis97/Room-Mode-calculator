@@ -87,6 +87,12 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
+            // Keep rules for the ads/consent/billing SDKs (release-only
+            // startup crashes when R8 strips the consent SDK).
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }

@@ -4,10 +4,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Build-time kill switch: `--dart-define=ADS_DISABLED=true` produces a
+/// build whose Dart code never touches the ads/consent SDKs — used to
+/// bisect release-only crashes to the ads startup path (or away from it).
+const adsDisabledByBuild = bool.fromEnvironment('ADS_DISABLED');
+
 /// Whether this build/platform can serve ads at all: the Google Mobile Ads
 /// SDK exists only on Android/iOS, and widget tests must never touch the
 /// plugin channels. Overridden in tests that exercise the gating logic.
 final adsSupportedProvider = Provider<bool>((ref) {
+  if (adsDisabledByBuild) return false;
   if (kIsWeb) return false;
   final isMobile = defaultTargetPlatform == TargetPlatform.android ||
       defaultTargetPlatform == TargetPlatform.iOS;

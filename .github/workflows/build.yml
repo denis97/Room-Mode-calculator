@@ -86,3 +86,17 @@ jobs:
           name: app-release-apks
           path: build/app/outputs/flutter-apk/app-*-release.apk
           if-no-files-found: error
+
+      # Diagnostic twin of the build above with the ads/consent startup path
+      # compiled out (see adsDisabledByBuild). Installing both bisects any
+      # release-only startup crash: no-ads works + ads crashes → the ads
+      # init path is the culprit; both crash → it's something else.
+      - name: Build no-ads diagnostic APKs (split per ABI)
+        run: flutter build apk --release --split-per-abi --dart-define=ADS_DISABLED=true
+
+      - name: Upload no-ads diagnostic APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apks-no-ads
+          path: build/app/outputs/flutter-apk/app-*-release.apk
+          if-no-files-found: error
