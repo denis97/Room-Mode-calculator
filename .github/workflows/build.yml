@@ -87,28 +87,3 @@ jobs:
           path: build/app/outputs/flutter-apk/app-*-release.apk
           if-no-files-found: error
 
-      # ── Diagnostic variants for the release-only startup crash ──
-      # Established so far: debug (fat, JIT) launches; split release APKs
-      # crash even with R8 off and the Dart ads path compiled out. Remaining
-      # axes: per-ABI splitting vs release AOT itself. The fat release APK
-      # separates them: fat works → split packaging; fat crashes → AOT/
-      # release mode.
-      - name: Build fat release APK (all ABIs, no split)
-        run: flutter build apk --release
-
-      - name: Upload fat release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-apk-fat
-          path: build/app/outputs/flutter-apk/app-release.apk
-          if-no-files-found: error
-
-      - name: Build debug diagnostic APK
-        run: flutter build apk --debug
-
-      - name: Upload debug diagnostic APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug-apk
-          path: build/app/outputs/flutter-apk/app-debug.apk
-          if-no-files-found: error
