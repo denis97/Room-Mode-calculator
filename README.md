@@ -25,6 +25,11 @@ Everything runs **fully offline** on the device.
   - [Pressure field](#pressure-field)
   - [Note mapping](#note-mapping)
   - [Room-quality metrics](#room-quality-metrics)
+- [Speaker & listener placement](#speaker--listener-placement)
+  - [Mode excitation & audibility](#mode-excitation--audibility)
+  - [Stereo pairs & coherent summation](#stereo-pairs--coherent-summation)
+  - [Predicted frequency response](#predicted-frequency-response)
+  - [The placement advisor](#the-placement-advisor)
 - [Numerical solver for arbitrary rooms](#numerical-solver-for-arbitrary-rooms)
   - [The governing equation](#1-the-governing-equation)
   - [Voxelization](#2-voxelization)
@@ -45,41 +50,39 @@ Everything runs **fully offline** on the device.
 
 ## Features
 
-The app has two tabs.
+The app is a two-screen **Setup → Viewer** flow, with a segmented toggle at the
+top of Setup choosing between a **Cuboid** room and a **Custom shape**.
 
-### Cuboid (analytical)
+### Setup
 
-For a rectangular room you enter length, width, height, air temperature,
-reverberation time (RT60) and a maximum frequency. Live, offline, it shows:
+- **Cuboid** — steppers for length, width, height and air temperature, with a
+  live isometric preview and a running mode count. "Calculate modes" opens the
+  Viewer.
+- **Custom shape** — a full **floor-plan editor**: draw the room's floor
+  polygon on a metre grid (drag vertices, tap an edge to insert one, long-press
+  to remove; tap to expand to a full-screen canvas with two-finger pan/zoom and
+  zoom-adaptive magnetic snapping). Presets for Rectangle / L / T / U shapes,
+  plus solver resolution and mode-count sliders. Edge lengths and an
+  area/volume readout show the real size. "Compute modes" runs the solver.
 
-- **Frequency axis** — every mode plotted on a frequency line, coloured by type
-  and sized by strength, with the Schroeder frequency marked.
-- **Piano keyboard** — modes marked on the keys they match; tap a key to *hear*
-  the pitch (a sine tone synthesised on the fly).
-- **2D pressure map** — top-down heatmap of a selected mode's standing-pressure
-  pattern at an adjustable ear height (red/blue = antinodes, dark = nodes).
-- **Rotatable 3D view** — the room as a box with all six walls coloured by the
-  mode's pressure; drag to orbit.
-- **Mode list** — frequency, indices `(p,q,r)`, type and nearest musical note.
-- **Room quality** — Schroeder frequency, room ratio vs recommended ratios, and
-  the Bonello criterion with a ⅓-octave modal-density bar chart.
+### Viewer
 
-### Custom 3D (numerical)
+Both room kinds share the same viewer chrome:
 
-For non-rectangular rooms:
+- **Resonances axis** — every mode on a frequency line. For the cuboid it is
+  coloured by type and sized by strength, with the Schroeder frequency marked;
+  for custom rooms each solved mode is a tappable peak. Tap to select.
+- **Rotatable 3D pressure field** — the room's boundary coloured by the selected
+  mode's pressure (cyan → dark → pink diverging gradient); drag to orbit.
+- **Mode navigator** — step or scrub through modes; a bottom sheet lists them
+  all (frequency, indices `(p,q,r)`, type, nearest note).
+- **Expandable tool sections** (cuboid): **Speaker placement** (see below),
+  **piano keyboard** (tap a key to *hear* the pitch — a sine tone synthesised on
+  the fly), **pressure slice** at an adjustable ear height, and **room quality**
+  (Schroeder frequency, room ratio vs recommended ratios, and the Bonello
+  criterion with a ⅓-octave modal-density bar chart).
 
-- **Floor-plan editor** — draw the room's floor polygon on a metre grid: drag
-  vertices, tap an edge to insert one, long-press to remove. Presets for
-  Rectangle / L / T / U shapes. Grid, edge lengths and a footprint/area/volume
-  readout show the real size.
-- **On-device solver** — computes the lowest modes of the extruded room with a
-  native FEM eigensolver (see `native/README.md`), in a background isolate so
-  the UI never blocks. Falls back to the pure-Dart finite-difference solver
-  below if the native library is unavailable (currently: iOS, until its Xcode
-  wiring is finished — see `native/README.md`).
-- **Results** — computed mode frequencies as selectable chips, a **rotatable 3D
-  surface** coloured by the mode's field, and an **interior cross-section slice**
-  at an adjustable height (cells outside the room are transparent).
+Everything is live and offline; editing the room re-derives the whole viewer.
 
 ---
 
@@ -166,6 +169,93 @@ midi = 69 + 12·log₂(f / 440)        (A4 = 440 Hz = MIDI 69)
   bands as a bar chart and a pass/fail flag.
 - **Room ratio** — dimensions normalized so the shortest = 1, compared to
   well-known good ratios (Sepmeyer, Louden, IEC/Bolt) with a deviation score.
+
+---
+
+## Speaker & listener placement
+
+Knowing a room's modes is half the story; *where you put the speakers and the
+listening seat* decides which of those modes you actually excite and hear. The
+cuboid Viewer's **Speaker placement** panel models this. You drag a speaker (or
+a stereo pair) and a listening position on a top-down plan, set their heights,
+and the app re-derives what each placement does — all from the same analytical
+mode shapes, so it stays live and offline. `lib/core/acoustics/`
+(`speaker_placement.dart`, `room_response.dart`, `placement_advisor.dart`) with
+Riverpod wiring in `lib/state/placement_providers.dart` and the UI in
+`lib/ui/widgets/placement_panel.dart`.
+
+### Mode excitation & audibility
+
+A source drives mode *n* in proportion to the mode shape **at the source**,
+`ψₙ(src)`; what reaches the listener additionally scales with the mode shape
+**at the listener**, `ψₙ(lis)`. Here `ψₙ` is exactly the cuboid pressure field
+from above. So per mode we report two magnitudes in `[0, 1]`:
+
+```
+source     = | ψₙ(speaker) |                     — how hard the speaker drives it
+audibility = | ψₙ(speaker) · ψₙ(listener) |      — how strongly it is heard
+```
+
+The consequences are physical and immediate: a speaker sitting **on a mode's
+nodal plane** (`ψₙ(src) = 0`) cannot excite that mode at any volume, and a
+listener on a nodal plane won't hear it even if it rings. A toggle re-weights
+the Resonances axis by `audibility`, so the modes your placement actually
+excites stand tall and the rest collapse to stubs. `modeExcitations` in
+`speaker_placement.dart`.
+
+### Stereo pairs & coherent summation
+
+At low frequencies both speakers of a stereo pair play the same signal
+**coherently**, so their contributions to a mode add **with sign** before
+anything is heard:
+
+```
+source = | Σₛ ψₙ(srcₛ) | / N        (N = number of sources)
+```
+
+The signs matter: a symmetric pair straddling the room's width centreline sits
+at `+ψ` and `−ψ` on every **odd-order width mode** and cancels it exactly — one
+of the reasons a symmetric setup sounds tighter. The app defaults to a mirrored
+stereo pair (dragging one speaker moves both symmetrically) and offers a
+**single-sub** mode for the subwoofer-placement question. Dividing by `N` keeps
+mono and stereo levels comparable.
+
+### Predicted frequency response
+
+Beyond per-mode bars, the panel predicts the **steady-state frequency response
+at the listener** by summing the damped modal contributions
+(`computeRoomResponse` in `room_response.dart`):
+
+```
+              εₙ · [ Σₛ ψₙ(srcₛ) ] · ψₙ(lis)
+p(f) = Σₙ  ─────────────────────────────────────      (a complex sum)
+              (fₙ² − f²) + j · f · fₙ / Qₙ
+```
+
+- `εₙ = ∏(2 for each non-zero index)` is the cosine-mode normalization `1/Λₙ`.
+- Each mode is a damped resonator peaking at its own `fₙ`; the imaginary term
+  sets the width. The quality factor comes from the room's reverberation time,
+  `Qₙ ≈ fₙ · RT60 / 2.2` (the standard `RT60 = 2.2 / Δf₃dB` relation), so a more
+  reverberant room gives narrower, taller peaks.
+- The lossless `(0,0,0)` "pressure" term is added as its `−1/f²` limit, which
+  produces the physical low-frequency **room gain** rise.
+- Being a complex sum, terms **interfere**: this is what turns placement into
+  audible peaks *and* deep nulls. The curve is normalized to a 0 dB mean —
+  only its **shape** is meaningful — and a **flatness score** (the standard
+  deviation of the dB curve, lower = flatter) summarizes it in one number. The
+  response is **reciprocal**: swapping speaker and listener leaves it unchanged.
+
+### The placement advisor
+
+Because the response is reciprocal, the same machinery answers *"where should
+the speakers go?"* and *"where should I sit?"* — only which endpoint is held
+fixed differs. The advisor sweeps candidate positions across a grid over the
+floor plan, computes the response flatness at each, and paints a **heatmap**
+(cyan = flatter) with the single best spot ringed. In stereo mode it sweeps the
+pair symmetrically. The sweep is `O(cells × freq-points × modes)`, so it runs
+in a **background isolate** (debounced while you drag) and never blocks the UI.
+`computeFlatnessGrid` / `bestSpot` in `placement_advisor.dart`,
+`advisorGridProvider` in `placement_providers.dart`.
 
 ---
 
@@ -324,14 +414,13 @@ the "Compute modes" button triggers a solve, so vertex dragging never janks.
 
 ### 9. Visualization
 
-A computed mode is a scalar field over the inside cells. Two views:
-
-- **3D surface** (`computed_mode_3d_view.dart`) — every voxel face that borders
-  a wall is drawn as a depth-sorted quad coloured by the field (a hand-rolled
-  orthographic painter, no 3D engine, to keep the app small). Drag to orbit.
-- **Interior slice** (`custom_mode_slice_view.dart`) — a horizontal
-  cross-section at an adjustable height, rendered as a heatmap with the
-  outside-room cells transparent, so you can see the pattern *inside* the room.
+A computed mode is a scalar field sampled at the nodes of the room's **boundary
+surface mesh** (`RenderMesh` — either the native FEM solver's own boundary, or,
+on the Dart fallback, the outward-facing voxel quads). The Viewer renders it as
+a **rotatable 3D surface** (`computed_mode_3d_view.dart`): the mesh is drawn with
+`Canvas.drawVertices` and Gouraud-shaded by the per-node field value in the same
+cyan → dark → pink gradient the cuboid views use — a hand-rolled orthographic
+painter, no 3D engine, to keep the app small. Drag to orbit.
 
 ---
 
@@ -340,25 +429,31 @@ A computed mode is a scalar field over the inside cells. Two views:
 ```
 lib/
   core/
-    acoustics/     analytical cuboid layer — modes, speed of sound, pressure,
-                   notes, Schroeder, Bonello / room ratios
-    geometry/      RoomShape (box, extruded polygon) + voxelizer
-    numeric/       Neumann Laplacian, CG, eigensolver, modal analysis, slices
+    acoustics/     analytical layer — modes, speed of sound, pressure, notes,
+                   Schroeder, Bonello / room ratios, AND the placement math
+                   (speaker_placement, room_response, placement_advisor)
+    geometry/      RoomShape (box, extruded polygon) + voxelizer + render mesh
+    numeric/       Neumann Laplacian, CG, eigensolver, modal analysis
                    (the Dart fallback path — see native/ for what ships)
-  state/           Riverpod providers (cuboid + custom room)
+  state/           Riverpod providers (room, custom room, placement, navigation)
   ui/
-    screens/       root shell, cuboid home, custom-room screen
-    widgets/       CustomPainter visualizations, editor, audio-backed keyboard
+    screens/       root shell, Setup screen, Viewer screen, expanded floor plan
+    widgets/       CustomPainter visualizations, floor-plan editor, placement
+                   panel, audio-backed keyboard, room-quality card
   audio/           on-the-fly sine-tone synthesis
+  monetization/    ads (banner + capped interstitial, UMP consent) and the
+                   one-time Pro (remove-ads) in-app purchase
 native/            C++ FEM/FDM solver, called via dart:ffi -- see native/README.md
 android/  ios/     platform projects (committed, not regenerated -- android/
                    carries the CMake/NDK wiring that builds native/)
+tool/              make_icon.py — regenerates the launcher-icon master art
 test/
-  acoustics/  geometry/  numeric/    unit tests anchoring the maths
+  acoustics/  geometry/  numeric/  state/  widgets/  monetization/
+                   unit + widget tests anchoring the maths and the gating logic
 ```
 
 The `core/` layer is pure Dart with no Flutter/UI imports, so it is
-unit-testable and shared by both tabs.
+unit-testable and shared by both room kinds.
 
 ## Developing
 
@@ -379,7 +474,12 @@ Unit tests anchor the maths to known values, for example:
 - analytical cuboid frequencies for a 5×4×3 m room (f(1,0,0)=34.3 Hz, etc.),
 - the **numerical solver reproduces the analytical box modes within 3 %**,
 - Bonello band counting and criterion pass/fail, room-proportion normalization,
-- voxelization/connectivity, floor-area (shoelace), and field-slice extraction.
+- voxelization/connectivity and floor-area (shoelace),
+- **placement**: corner sources excite every mode; a source on a mode's nodal
+  plane excites nothing; a symmetric stereo pair cancels odd-order width modes;
+  the response is reciprocal in speaker/listener,
+- **monetization gating**: ads stay off under `flutter test`, Pro disables ads,
+  and the interstitial frequency cap holds.
 
 ## CI & release artifacts
 
@@ -462,11 +562,12 @@ The launcher icon set regenerates from `assets/icon/` via
 ## Roadmap
 
 Done: analytical cuboid calculator, room-quality metrics, on-device numerical
-solver for arbitrary rooms (native FEM, with a Dart FDM fallback), 3D +
-interior-slice visualization, floor-plan editor, speaker/listener placement
-with stereo-pair modeling, Play-release scaffolding (signing, icon, ads +
-Pro unlock).
+solver for arbitrary rooms (native FEM, with a Dart FDM fallback), rotatable 3D
+mode-shape visualization, floor-plan editor, speaker/listener placement with
+stereo-pair modeling and a flatness advisor, the Studio-themed Setup/Viewer
+flow, and Play-release scaffolding (signing, icon, ads + Pro unlock).
 
 Possible next steps: finish the iOS native wiring (see `native/README.md`),
-isosurface / volumetric 3D rendering, saving/loading rooms, SBIR
-(speaker-boundary interference), and result export.
+placement for custom (non-cuboid) rooms (needs interior field sampling from the
+solver), parametric-EQ suggestions and an audible "hear your room" audition,
+isosurface / volumetric 3D rendering, saving/loading rooms, and result export.
