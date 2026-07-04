@@ -10,3 +10,15 @@
 # Play Billing (in_app_purchase): same insurance for the purchase flow.
 -keep class com.android.billingclient.** { *; }
 -dontwarn com.google.android.gms.**
+
+# play-services-ads transitively initializes androidx.work at process start
+# (androidx.startup InitializationProvider). Room instantiates its generated
+# database class (WorkDatabase_Impl) via reflection, so R8 renaming/stripping
+# it crashes the app before the first frame:
+#   RuntimeException: Failed to create an instance of
+#   androidx.work.impl.WorkDatabase
+-keep class androidx.work.impl.WorkDatabase { *; }
+-keep class androidx.work.impl.WorkDatabase_Impl { *; }
+-keep class androidx.room.** { *; }
+-keep class androidx.sqlite.** { *; }
+-keep class * extends androidx.room.RoomDatabase { *; }

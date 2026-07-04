@@ -110,6 +110,16 @@ kotlin {
     }
 }
 
+dependencies {
+    // play-services-ads (google_mobile_ads) transitively depends on an old
+    // androidx.work, whose Room internals can end up version-skewed against
+    // the newer androidx.room other dependencies resolve. WorkManager then
+    // fails to create WorkDatabase during androidx.startup initialization —
+    // a launch crash. Pinning a current WorkManager keeps the whole
+    // work/room/sqlite trio consistent.
+    implementation("androidx.work:work-runtime:2.10.1")
+}
+
 flutter {
     source = "../.."
 }
