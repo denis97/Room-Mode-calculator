@@ -31,15 +31,11 @@ Everything runs **fully offline** on the device.
   - [Predicted frequency response](#predicted-frequency-response)
   - [The placement advisor](#the-placement-advisor)
 - [Numerical solver for arbitrary rooms](#numerical-solver-for-arbitrary-rooms)
-  - [The governing equation](#1-the-governing-equation)
-  - [Voxelization](#2-voxelization)
-  - [The discrete operator (finite volume)](#3-the-discrete-operator-finite-volume)
-  - [From eigenvalue to frequency](#4-from-eigenvalue-to-frequency)
-  - [The eigensolver](#5-the-eigensolver)
-  - [FDM vs FEM](#6-fdm-vs-fem)
-  - [Accuracy, resolution & mode count](#7-accuracy-resolution--mode-count)
-  - [Running off the UI thread](#8-running-off-the-ui-thread)
-  - [Visualization](#9-visualization)
+  - [The governing equation (both paths)](#1-the-governing-equation-both-paths)
+  - [Native FEM path (what ships on Android)](#2-native-fem-path-what-ships-on-android)
+  - [Dart FVM/FDM path (fallback + reference oracle)](#3-dart-fvmfdm-path-fallback--reference-oracle)
+  - [Running off the UI thread (both paths)](#4-running-off-the-ui-thread-both-paths)
+  - [Visualization](#5-visualization)
 - [Project layout](#project-layout)
 - [Developing](#developing)
 - [Testing](#testing)
@@ -98,25 +94,24 @@ sparse and audible as booms and nulls; that is what this app maps out.
 
 ### Analytical cuboid modes
 
-For a rigid-wall rectangular room `L × W × H` (metres) the modal frequencies
-have a closed form:
+For a rigid-wall rectangular room $L \times W \times H$ (metres) the modal
+frequencies have a closed form:
 
-```
-f(p, q, r) = (c / 2) · √( (p/L)² + (q/W)² + (r/H)² )
-```
+$$f_{p,q,r} = \frac{c}{2}\sqrt{\left(\frac{p}{L}\right)^2 + \left(\frac{q}{W}\right)^2 + \left(\frac{r}{H}\right)^2}$$
 
-with integer indices `p, q, r ∈ {0, 1, 2, …}` (not all zero) and `c` the speed
-of sound. The solver enumerates every `(p, q, r)` up to the chosen cutoff — the
-index bound per axis is `n ≤ 2·f_max·L / c` — and sorts by frequency.
-Implemented in `lib/core/acoustics/mode_calculator.dart`.
+with integer indices $p, q, r \in \{0, 1, 2, \dots\}$ (not all zero) and $c$ the
+speed of sound. The solver enumerates every $(p, q, r)$ up to the chosen cutoff.
+Since the smallest-frequency mode for a given index is axial,
+$f_{n,0,0} = \tfrac{cn}{2L}$, the per-axis index bound is
+$n \le \tfrac{2 f_\text{max} L}{c}$; the solver iterates to that bound and keeps
+modes with $f \le f_\text{max}$, sorted by frequency. Implemented in
+`lib/core/acoustics/mode_calculator.dart`.
 
 ### Speed of sound
 
 Temperature-dependent, in dry air:
 
-```
-c = 331.3 · √(1 + T / 273.15)   m/s        (≈ 343 m/s at 20 °C)
-```
+$$c = 331.3\,\sqrt{1 + \frac{T}{273.15}}\ \text{m/s} \qquad (\approx 343\ \text{m/s at } 20\,^\circ\text{C})$$
 
 `lib/core/acoustics/speed_of_sound.dart`.
 
@@ -135,25 +130,22 @@ oblique modes involve all six walls and are weakest. `lib/core/acoustics/mode.da
 
 ### Pressure field
 
-The normalized standing-pressure field of mode `(p, q, r)` is a product of
+The normalized standing-pressure field of mode $(p, q, r)$ is a product of
 cosines:
 
-```
-P(x, y, z) = cos(pπx/L) · cos(qπy/W) · cos(rπz/H)          (∈ [-1, 1])
-```
+$$P(x, y, z) = \cos\frac{p\pi x}{L}\,\cos\frac{q\pi y}{W}\,\cos\frac{r\pi z}{H} \in [-1, 1]$$
 
-Antinodes (|P| = 1) sit at the walls; nodal planes (P = 0) are where any cosine
-crosses zero. `lib/core/acoustics/pressure_field.dart` samples this onto a grid
-for the heatmaps and the 3D view.
+Antinodes ($|P| = 1$) sit at the walls; nodal planes ($P = 0$) are where any
+cosine crosses zero. `lib/core/acoustics/pressure_field.dart` samples this onto
+a grid for the heatmaps and the 3D view. This same $P$ is the mode shape
+$\psi_n$ used by the placement math below.
 
 ### Note mapping
 
 To place modes on a keyboard and let you hear them, frequencies map to MIDI /
 musical pitch:
 
-```
-midi = 69 + 12·log₂(f / 440)        (A4 = 440 Hz = MIDI 69)
-```
+$$\text{midi} = 69 + 12\log_2\frac{f}{440} \qquad (\text{A4} = 440\ \text{Hz} = \text{MIDI } 69)$$
 
 `lib/core/acoustics/note_mapping.dart`.
 
@@ -162,8 +154,8 @@ midi = 69 + 12·log₂(f / 440)        (A4 = 440 Hz = MIDI 69)
 `lib/core/acoustics/schroeder.dart` and `room_ratios.dart`:
 
 - **Schroeder frequency** — boundary between the modal region (discrete modes)
-  and the diffuse region (dense overlap): `f_s = 2000·√(RT60 / V)`, `V` the
-  volume in m³.
+  and the diffuse region (dense overlap): $f_s = 2000\,\sqrt{\text{RT60} / V}$,
+  with $V$ the volume in m³.
 - **Bonello criterion** — bucket the modes into ⅓-octave bands; a good room's
   mode count per band never *decreases* as frequency rises. The app shows the
   bands as a bar chart and a pass/fail flag.
@@ -186,21 +178,19 @@ Riverpod wiring in `lib/state/placement_providers.dart` and the UI in
 
 ### Mode excitation & audibility
 
-A source drives mode *n* in proportion to the mode shape **at the source**,
-`ψₙ(src)`; what reaches the listener additionally scales with the mode shape
-**at the listener**, `ψₙ(lis)`. Here `ψₙ` is exactly the cuboid pressure field
-from above. So per mode we report two magnitudes in `[0, 1]`:
+A source drives mode $n$ in proportion to the mode shape **at the source**,
+$\psi_n(\mathbf{r}_\text{src})$; what reaches the listener additionally scales
+with the mode shape **at the listener**, $\psi_n(\mathbf{r}_\text{lis})$. Here
+$\psi_n$ is exactly the cuboid pressure field from above. So per mode we report
+two magnitudes in $[0, 1]$:
 
-```
-source     = | ψₙ(speaker) |                     — how hard the speaker drives it
-audibility = | ψₙ(speaker) · ψₙ(listener) |      — how strongly it is heard
-```
+$$\text{source} = \bigl|\psi_n(\mathbf{r}_\text{src})\bigr|, \qquad \text{audibility} = \bigl|\psi_n(\mathbf{r}_\text{src})\,\psi_n(\mathbf{r}_\text{lis})\bigr|$$
 
 The consequences are physical and immediate: a speaker sitting **on a mode's
-nodal plane** (`ψₙ(src) = 0`) cannot excite that mode at any volume, and a
-listener on a nodal plane won't hear it even if it rings. A toggle re-weights
-the Resonances axis by `audibility`, so the modes your placement actually
-excites stand tall and the rest collapse to stubs. `modeExcitations` in
+nodal plane** ($\psi_n(\mathbf{r}_\text{src}) = 0$) cannot excite that mode at
+any volume, and a listener on a nodal plane won't hear it even if it rings. A
+toggle re-weights the Resonances axis by audibility, so the modes your placement
+actually excites stand tall and the rest collapse to stubs. `modeExcitations` in
 `speaker_placement.dart`.
 
 ### Stereo pairs & coherent summation
@@ -209,16 +199,14 @@ At low frequencies both speakers of a stereo pair play the same signal
 **coherently**, so their contributions to a mode add **with sign** before
 anything is heard:
 
-```
-source = | Σₛ ψₙ(srcₛ) | / N        (N = number of sources)
-```
+$$\text{source} = \frac{1}{N}\left|\sum_{s=1}^{N} \psi_n(\mathbf{r}_s)\right|$$
 
 The signs matter: a symmetric pair straddling the room's width centreline sits
-at `+ψ` and `−ψ` on every **odd-order width mode** and cancels it exactly — one
-of the reasons a symmetric setup sounds tighter. The app defaults to a mirrored
-stereo pair (dragging one speaker moves both symmetrically) and offers a
-**single-sub** mode for the subwoofer-placement question. Dividing by `N` keeps
-mono and stereo levels comparable.
+at $+\psi$ and $-\psi$ on every **odd-order width mode** and cancels it exactly —
+one of the reasons a symmetric setup sounds tighter. The app defaults to a
+mirrored stereo pair (dragging one speaker moves both symmetrically) and offers
+a **single-sub** mode for the subwoofer-placement question. Dividing by $N$
+keeps mono and stereo levels comparable.
 
 ### Predicted frequency response
 
@@ -226,18 +214,16 @@ Beyond per-mode bars, the panel predicts the **steady-state frequency response
 at the listener** by summing the damped modal contributions
 (`computeRoomResponse` in `room_response.dart`):
 
-```
-              εₙ · [ Σₛ ψₙ(srcₛ) ] · ψₙ(lis)
-p(f) = Σₙ  ─────────────────────────────────────      (a complex sum)
-              (fₙ² − f²) + j · f · fₙ / Qₙ
-```
+$$p(f) = \sum_n \frac{\varepsilon_n\,\bigl[\sum_s \psi_n(\mathbf{r}_s)\bigr]\,\psi_n(\mathbf{r}_\text{lis})}{(f_n^2 - f^2) + j\,f f_n/Q_n}$$
 
-- `εₙ = ∏(2 for each non-zero index)` is the cosine-mode normalization `1/Λₙ`.
-- Each mode is a damped resonator peaking at its own `fₙ`; the imaginary term
+- $\varepsilon_n = \prod (2 \text{ for each non-zero index})$ is the cosine-mode
+  normalization $1/\Lambda_n$.
+- Each mode is a damped resonator peaking at its own $f_n$; the imaginary term
   sets the width. The quality factor comes from the room's reverberation time,
-  `Qₙ ≈ fₙ · RT60 / 2.2` (the standard `RT60 = 2.2 / Δf₃dB` relation), so a more
-  reverberant room gives narrower, taller peaks.
-- The lossless `(0,0,0)` "pressure" term is added as its `−1/f²` limit, which
+  $Q_n \approx f_n \cdot \text{RT60} / 2.2$ (the standard
+  $\text{RT60} = 2.2 / \Delta f_{3\text{dB}}$ relation), so a more reverberant
+  room gives narrower, taller peaks.
+- The lossless $(0,0,0)$ "pressure" term is added as its $-1/f^2$ limit, which
   produces the physical low-frequency **room gain** rise.
 - Being a complex sum, terms **interfere**: this is what turns placement into
   audible peaks *and* deep nulls. The curve is normalized to a 0 dB mean —
@@ -261,158 +247,125 @@ in a **background isolate** (debounced while you drag) and never blocks the UI.
 
 ## Numerical solver for arbitrary rooms
 
-This is the heart of the "Custom 3D" tab: how the app finds the modes of a room
-that has *no* closed-form solution.
+This is the heart of the **Custom shape** workflow: how the app finds the modes
+of a room that has *no* closed-form solution. Two solvers implement it, and it
+matters which one runs:
 
-**What actually ships:** a native FEM solver (C++, in `native/`, called via
-`dart:ffi` — see `native/README.md` for the full writeup, including a real bug
-a 5-point star test case caught and fixed). It's both faster and more accurate
-than the pure-Dart path below on non-rectangular rooms, which is the whole
-point of this tab. **The rest of this section documents the pure-Dart
-finite-difference (FDM) solver** (`lib/core/numeric/`), which remains as the
-automatic fallback (see `runFloorPlanAnalysis` in
-`lib/state/custom_room_providers.dart`) and as an independent reference
-implementation the native solver's tests check against. The physics and the
-overall approach (voxelize → matrix-free operator → Lanczos/inverse-iteration
-eigensolver) are the same story either way; only the discretization and
-language differ.
+| | **Native FEM** (primary) | **Dart FVM/FDM** (fallback + oracle) |
+|---|---|---|
+| Language | C++ (`native/`, via `dart:ffi`) | pure Dart (`lib/core/numeric/`) |
+| Discretization | body-fitted **tetrahedral mesh**, P1 finite elements | staircased **voxel grid**, cell-centred finite volume |
+| Eigen-solve | Lanczos on the generalized problem $K\mathbf{u}=\mu M\mathbf{u}$ | inverse iteration + Conjugate Gradient |
+| When it runs | **Android** (what actually ships) | any build without the native lib — currently **iOS/desktop**, and every `flutter test` |
 
-It solves the acoustic eigenproblem **numerically on a voxel grid using a
-finite-difference method (FDM)**. amroc pro solves the same physics with FEM;
-the maths of the problem is identical, the discretization differs (see
-[FDM vs FEM](#6-fdm-vs-fem)).
+On a phone today the modes you see come from the **FEM** path — it is both
+faster and more accurate on non-rectangular rooms, which is the whole point of
+this workflow. The Dart path is a genuine fallback (it runs the moment the
+native library is absent) *and* an independent reference the FEM tests check
+against. Both solve the **same** physics with the **same** boundary condition;
+they differ in how they discretize the geometry and which eigen-algorithm they
+run. The section covers the shared physics, then each path.
 
-### 1. The governing equation
+### 1. The governing equation (both paths)
 
-Sound pressure `p` in a rigid-wall cavity obeys the **Helmholtz eigenproblem**
+Sound pressure $p$ in a rigid-wall cavity $\Omega$ obeys the **Helmholtz
+eigenproblem**
 
-```
-−∇²p = k²p           inside the room
-∂p/∂n = 0            on the walls   (rigid wall = no normal air velocity)
-```
+$$-\nabla^2 p = k^2 p \quad \text{in } \Omega, \qquad \frac{\partial p}{\partial n} = 0 \quad \text{on } \partial\Omega$$
 
-`k = ω/c = 2πf/c` is the wavenumber. Solving this is an eigenvalue problem: the
-eigenvalues `μ = k²` give the modal frequencies, the eigenfunctions `p` give the
-mode shapes. The rigid-wall condition `∂p/∂n = 0` is a **Neumann** boundary
-condition.
+$k = \omega/c = 2\pi f/c$ is the wavenumber. This is an eigenvalue problem: the
+eigenvalues $\mu = k^2$ give the modal frequencies, the eigenfunctions $p$ the
+mode shapes. The rigid-wall condition $\partial p/\partial n = 0$ (no normal air
+velocity) is a **Neumann** boundary condition. Once an eigenvalue $\mu$ is in
+hand, its frequency is
 
-### 2. Voxelization
+$$f = \frac{c\,\sqrt{\mu}}{2\pi}$$
 
-The room shape (`RoomShape` — a `BoxShape`, or an `ExtrudedPolygonShape` built
-from your floor polygon extruded to a height) is diced into a regular grid of
-**cubic cells** of side `h`. A cell belongs to the room when its **centre** is
-inside the shape. Each inside cell gets a compact index; for each one we
-precompute the compact indices of its six axis neighbours, marking `−1` where a
-neighbour is outside — i.e. **a missing neighbour is a wall**. The solver then
-works purely off this connectivity, so it is completely shape-agnostic.
-`lib/core/geometry/voxel_grid.dart`.
+using the temperature-dependent $c$ — the same conversion in both solvers
+(`native/src/api/room_mode_solver.cpp` and
+`lib/core/numeric/modal_analysis.dart`).
 
-### 3. The discrete operator (finite volume)
+### 2. Native FEM path (what ships on Android)
 
-We need a discrete version of `A = −∇²` with the Neumann condition baked in. Use
-a **cell-centred finite-volume** stencil: for cell *i*,
+`native/` (full writeup — including a real connected-components bug a 5-point
+star test caught — in `native/README.md`):
 
-```
-(A·u)_i = (1/h²) · Σ_{j ∈ inside-neighbours(i)} (u_i − u_j)
-```
+1. **Triangulate & extrude.** The floor polygon is ear-clip triangulated,
+   Delaunay-refined, uniformly subdivided, then extruded into a 3-D
+   **tetrahedral mesh** (`polygon_tet_mesh.h`). Unlike voxels this is
+   *body-fitted*: the mesh follows the actual walls instead of staircasing them.
+2. **Assemble $K$ and $M$.** Standard P1 (linear) finite elements give a
+   stiffness matrix $K$ (the discrete $-\nabla^2$) and a **lumped** (diagonal)
+   mass matrix $M$ (`fem_assembly.h`). The Neumann condition is the natural
+   boundary condition of the weak form — it needs no special handling.
+3. **Solve the generalized eigenproblem.** We want the smallest eigenpairs of
+   $K\mathbf{u} = \mu M\mathbf{u}$. Because $M$ is lumped/diagonal, this is
+   symmetrized to a standard problem for $\tilde{K} = M^{-1/2} K M^{-1/2}$ (via
+   `minvSqrt` $= 1/\sqrt{M_{ii}}$) and handed to a **Lanczos** iteration for the
+   lowest modes (`fem_lanczos.h`).
+4. **Boundary surface for free.** The mesh faces belonging to exactly one tet
+   *are* the room's outer surface (walls/floor/ceiling); the solver returns them
+   directly, with the field already sampled at those nodes — so the 3-D view
+   needs no separate visualization grid or resampling.
 
-That is: each face shared with an *inside* neighbour contributes a
-`(u_i − u_j)/h²` flux; a face on a **wall has no neighbour and contributes
-nothing** — which is exactly zero normal flux, `∂p/∂n = 0`. So the rigid-wall
-condition falls out of the connectivity for free, with no special-casing.
+The **resolution slider** maps to a mesh refinement level and extrusion-layer
+count, calibrated so every slider position clears an accuracy floor (see the big
+comment in `room_mode_solver.cpp`): the lowest setting keeps the box fundamental
+to ~0.16 % and a concave L-room to ~0.9 %; the highest to ~0.04 %, at the cost
+of a multi-second solve the UI warns about before running.
 
-Key properties of `A` (all used by the solver):
+### 3. Dart FVM/FDM path (fallback + reference oracle)
 
-- **Symmetric** and **positive semi-definite**.
-- Its **null space is the constant vector** — the trivial `μ = 0` "DC" mode at
-  0 Hz. Physically that is the uniform-pressure non-mode; we skip it.
-- `A·u` always has **zero sum**, so `A` maps the zero-mean subspace to itself.
-  Conjugate Gradient started from zero therefore stays orthogonal to the null
-  space automatically.
+When the native library isn't present, `lib/core/numeric/` solves the same
+eigenproblem on a **voxel grid** instead of a mesh:
 
-The operator is **matrix-free** — `apply(x)` just loops cells and their six
-neighbours; we never store a matrix. `lib/core/numeric/laplacian_operator.dart`.
+- **Voxelization** (`voxel_grid.dart`). The shape is diced into cubic cells of
+  side $h$; a cell is "inside" when its centre is. Each inside cell stores the
+  compact indices of its six axis neighbours, marking $-1$ where a neighbour is
+  outside — **a missing neighbour is a wall**. The solver works purely off this
+  connectivity, so it is shape-agnostic.
+- **Discrete operator** (`laplacian_operator.dart`). $A = -\nabla^2$ is a
+  cell-centred **finite-volume** stencil — which, on this uniform grid, is
+  identical to the classic 7-point finite-difference Laplacian (hence "FVM/FDM"):
 
-### 4. From eigenvalue to frequency
+$$(A\mathbf{u})_i = \frac{1}{h^2}\sum_{j\,\in\,\mathcal{N}(i)} (u_i - u_j)$$
 
-An eigenpair `(μ, u)` of `A` is a mode. Since `μ = k² = (2πf/c)²`,
+  Each face shared with an inside neighbour $j \in \mathcal{N}(i)$ contributes a
+  $(u_i - u_j)/h^2$ flux; a face on a **wall has no neighbour and contributes
+  nothing** — exactly $\partial p/\partial n = 0$. The rigid-wall condition
+  falls out of the connectivity, no special-casing. $A$ is symmetric positive
+  semi-definite, **matrix-free** (`apply(x)` just loops neighbours; no matrix is
+  stored), and its null space is the constant vector — the trivial $\mu = 0$
+  "DC" mode, which we skip by keeping every vector zero-mean.
+- **Eigensolver** (`eigensolver.dart`) — **inverse iteration with deflation**:
+  repeatedly solving $A\mathbf{w} = \mathbf{v}$ makes $\mathbf{w}$ converge to
+  the smallest-eigenvalue eigenvector (because $A^{-1}$ amplifies small
+  eigenvalues most); each inner solve is **Conjugate Gradient** (`cg_solver.dart`;
+  a tiny shift keeps $A$ strictly positive). Vectors are kept zero-mean (skip
+  DC) and Gram-Schmidt **deflated** against modes already found, so successive
+  iterations land on the *next* mode up. Convergence is judged by the Rayleigh
+  quotient $\mu = (\mathbf{u}^\top A\mathbf{u})/(\mathbf{u}^\top\mathbf{u})$ and
+  the residual $\lVert A\mathbf{u} - \mu\mathbf{u}\rVert$; deterministic per seed.
 
-```
-f = c · √μ / (2π)
-```
+**Why FVM here, FEM there.** The voxel path is trivial to run entirely in Dart
+with no native toolchain, which is exactly what a fallback needs. Its cost is a
+staircased boundary and $O(h^2)$ error; the body-fitted FEM represents slanted
+walls more faithfully at a given resolution, which is why it's the primary path.
+Validation: a 4×3×2 m box at resolution 12 ($h = \tfrac13$ m) matches the
+analytical modes to within **3 %** (`test/numeric/box_modes_test.dart`); finer
+grids are tighter. Cost scales steeply — cells $\sim$ resolution³ and CG
+iterations grow with refinement — so resolution and mode count are both capped,
+and the solve always runs off the UI thread (next).
 
-`lib/core/numeric/modal_analysis.dart` does this conversion using the
-temperature-dependent `c`.
+### 4. Running off the UI thread (both paths)
 
-### 5. The eigensolver
+A solve can take a noticeable fraction of a second (the native path more, at high
+resolution), so it runs in a **background isolate** via Flutter's `compute()`
+(`runFloorPlanAnalysis` in `lib/state/custom_room_providers.dart`). Editing the
+floor plan is free; only the "Compute modes" button triggers a solve, so vertex
+dragging never janks.
 
-We want the **few smallest non-zero** eigenvalues (the lowest modes). The app
-uses **inverse iteration with deflation** (`lib/core/numeric/eigensolver.dart`):
-
-1. **Inverse iteration.** Repeatedly solving `A·w = v` and renormalising makes
-   `w` converge to the eigenvector with the *smallest* eigenvalue, because
-   `A⁻¹` amplifies small-eigenvalue components the most.
-2. **Inner solve = Conjugate Gradient.** Each `A·w = v` is solved with CG
-   (`cg_solver.dart`). `A` is symmetric positive-(semi)definite and matrix-free,
-   which is exactly what CG wants; a tiny shift keeps it strictly positive for
-   robustness.
-3. **Skip the DC mode.** We keep every vector **zero-mean**, projecting out the
-   constant null space, so the iteration converges to the smallest *non-zero*
-   eigenvalue rather than the trivial 0.
-4. **Deflation for the next modes.** After finding a mode, subsequent iterations
-   are orthogonalised (Gram-Schmidt) against all modes found so far, so the
-   iteration lands on the *next* mode up instead of re-finding the same one.
-5. **Convergence** is judged by the Rayleigh quotient `μ = (uᵀAu)/(uᵀu)` and the
-   residual `‖A·u − μ·u‖`. The whole process is deterministic for a given seed.
-
-### 6. FDM vs FEM
-
-amroc pro uses the **Finite Element Method**: it meshes the room into
-tetrahedra and expands the field in basis functions, assembling stiffness `K`
-and mass `M` matrices and solving `K·u = μ·M·u`.
-
-This app uses the **Finite Difference / Finite Volume Method** on a regular
-voxel grid instead. It solves the *same* Helmholtz eigenproblem with the *same*
-Neumann boundary condition, but:
-
-- the geometry is approximated by voxels (a staircased boundary) rather than a
-  body-fitted mesh,
-- the operator is a simple matrix-free stencil rather than an assembled `K`/`M`.
-
-FDM is much simpler to implement and run **entirely on a phone**, and for the
-low modes that dominate room acoustics it agrees with the analytical cuboid
-solution to within the discretization error (see below). A body-fitted FEM
-would represent slanted/curved walls more faithfully at a given resolution; that
-is a possible future upgrade.
-
-### 7. Accuracy, resolution & mode count
-
-Two controls trade accuracy for speed:
-
-- **Resolution** = cells along the longest axis, so `h = longest_dim /
-  resolution`. The finite-difference error is **O(h²)**, and coarse grids read
-  modes slightly **low**. The grid also rounds each dimension to a multiple of
-  `h`, and approximates the boundary as a staircase — both improve as `h`
-  shrinks. Validation: a 4×3×2 m box at resolution 12 matches the analytical
-  modes to within **3 %**; higher resolutions are tighter. **Cost scales
-  steeply** (cells ~ resolution³, and CG iterations grow as the grid refines, so
-  total work ~ resolution⁴–⁵) — which is why resolution is capped and the solve
-  runs off the UI thread.
-- **Mode count.** Modes are found one at a time and each is deflated against all
-  previous ones, so cost grows faster than linearly; higher modes are also
-  closer together (slower, less reliable convergence) and need enough cells per
-  wavelength to be represented at all. Hence a deliberate cap rather than an
-  unbounded list. The UI shows the live cell size and grid dimensions so the
-  trade-off is visible while you drag.
-
-### 8. Running off the UI thread
-
-A solve can take a noticeable fraction of a second, so it runs in a **background
-isolate** via Flutter's `compute()` (`runFloorPlanAnalysis` in
-`lib/state/custom_room_providers.dart`). Editing the floor plan is free; only
-the "Compute modes" button triggers a solve, so vertex dragging never janks.
-
-### 9. Visualization
+### 5. Visualization
 
 A computed mode is a scalar field sampled at the nodes of the room's **boundary
 surface mesh** (`RenderMesh` — either the native FEM solver's own boundary, or,
