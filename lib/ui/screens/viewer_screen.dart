@@ -23,7 +23,7 @@ import '../widgets/room_quality_card.dart';
 
 /// Inspect the computed modes: frequency axis, a drag-to-orbit 3D pressure
 /// field, mode-by-mode navigation, and the full table. Mirrors the design
-/// mockup's Viewer screen for both the cuboid and custom-shape workflows.
+/// mockup's Analyze screen for both the box and custom-shape workflows.
 class ViewerScreen extends ConsumerStatefulWidget {
   const ViewerScreen({super.key});
 
@@ -139,7 +139,7 @@ class _ViewerHeader extends ConsumerWidget {
                         children: [
                           Text(
                             kind == RoomKind.cuboid
-                                ? 'CUBOID ROOM'
+                                ? 'BOX ROOM'
                                 : 'CUSTOM ROOM',
                             style: const TextStyle(
                               fontSize: 9,
