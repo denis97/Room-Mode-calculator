@@ -25,7 +25,7 @@ import 'floor_plan_expanded_screen.dart';
 const int _slowResolutionThreshold = 22;
 
 /// Describe the room, then move to the viewer to see its computed modes.
-/// Mirrors the design mockup's Setup screen: a Cuboid/Custom toggle over
+/// Mirrors the design mockup's Setup screen: a Box/Custom toggle over
 /// either the analytical box inputs or the numerical floor-plan editor.
 class SetupScreen extends ConsumerWidget {
   const SetupScreen({super.key});
@@ -93,8 +93,8 @@ class SetupScreen extends ConsumerWidget {
               SegmentedToggle<RoomKind>(
                 value: kind,
                 options: const [
-                  (RoomKind.cuboid, 'Cuboid'),
-                  (RoomKind.custom, 'Custom shape'),
+                  (RoomKind.cuboid, 'Box'),
+                  (RoomKind.custom, 'Custom'),
                 ],
                 onChanged: (v) => ref.read(roomKindProvider.notifier).state = v,
               ),

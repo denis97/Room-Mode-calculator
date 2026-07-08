@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../app_theme.dart';
 
 /// A pill-shaped two-or-more-way toggle, styled like the mockup's
-/// Cuboid/Custom shape switch: a soft dark track with a solid accent chip
+/// Box/Custom switch: a soft dark track with a solid accent chip
 /// under the selected option.
 class SegmentedToggle<T> extends StatelessWidget {
   const SegmentedToggle({
