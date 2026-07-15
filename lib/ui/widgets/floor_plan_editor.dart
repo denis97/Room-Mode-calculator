@@ -53,7 +53,8 @@ class _FloorPlanEditorState extends ConsumerState<FloorPlanEditor> {
 
   // ---- pan/zoom view transform (screen = world*_scale*_viewScale + _viewOffset) ----
   double _viewScale = 1.0;
-  Offset _viewOffset = Offset.zero;
+  Offset _viewOffset = const Offset(0, 0);
+  bool _isInitialized = false;
   static const double _minZoom = 0.4;
   static const double _maxZoom = 6.0;
 
@@ -310,6 +311,27 @@ class _FloorPlanEditorState extends ConsumerState<FloorPlanEditor> {
       builder: (context, constraints) {
         _canvasWidth = constraints.maxWidth;
         _canvasHeight = constraints.maxHeight;
+
+        // Center the view on the room's bounding box on first render
+        if (!_isInitialized && verts.isNotEmpty && _canvasWidth > 1) {
+          _isInitialized = true;
+          var minX = double.infinity, minY = double.infinity;
+          var maxX = -double.infinity, maxY = -double.infinity;
+          for (final (x, y) in verts) {
+            minX = math.min(minX, x);
+            maxX = math.max(maxX, x);
+            minY = math.min(minY, y);
+            maxY = math.max(maxY, y);
+          }
+          final centerX = (minX + maxX) / 2;
+          final centerY = (minY + maxY) / 2;
+          // Pan so the room center aligns with the viewport center
+          _viewOffset = Offset(
+            (FloorPlanEditor.viewSpan / 2 - centerX) * _scale,
+            (FloorPlanEditor.viewSpan / 2 - centerY) * _scale,
+          );
+        }
+
         final content = ClipRect(
           child: Transform(
             transform: Matrix4.identity()

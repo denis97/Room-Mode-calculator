@@ -351,10 +351,11 @@ class _CuboidViewer extends ConsumerWidget {
           onTap: () => _showCuboidModeSheet(context, ref, modes, selected),
         ),
         const SizedBox(height: 12),
-        _DetailsExpander(
-          title: 'Speaker placement',
-          child: const PlacementPanel(),
-        ),
+        // Speaker placement: deferred to post-launch refinement
+        // _DetailsExpander(
+        //   title: 'Speaker placement',
+        //   child: const PlacementPanel(),
+        // ),
         _DetailsExpander(
           title: 'Keyboard — tap to hear a mode',
           child: const PianoKeyboard(),
