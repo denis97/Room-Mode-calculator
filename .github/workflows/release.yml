@@ -1,0 +1,74 @@
+name: Release AAB
+
+# Builds the signed Play Store App Bundle when a version tag is pushed
+# (e.g. `git tag v1.0.0 && git push origin v1.0.0`). Kept separate from
+# build.yml: that one is a fast per-commit compile gate, this one produces
+# the actual distributable and needs the signing secrets.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   UPLOAD_KEYSTORE_BASE64  base64 of the upload keystore
+#                           (`base64 -w0 upload-keystore.jks`)
+#   KEYSTORE_PASSWORD       keystore password
+#   KEY_ALIAS               key alias (e.g. `upload`)
+#   KEY_PASSWORD            key password
+#
+# The produced .aab is attached as a workflow artifact; download it and
+# upload to the Play Console (or wire a Play publish action later).
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # Same NDK dance as build.yml: the app compiles the native solver
+      # (native/) via CMake and needs the exact NDK version the Flutter
+      # Gradle plugin pins (FlutterExtension.kt).
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: sdkmanager --install "ndk;28.2.13676358"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Materialize signing config
+        env:
+          UPLOAD_KEYSTORE_BASE64: ${{ secrets.UPLOAD_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$UPLOAD_KEYSTORE_BASE64" ]; then
+            echo "::error::UPLOAD_KEYSTORE_BASE64 secret is not set — cannot sign a Play upload."
+            exit 1
+          fi
+          echo "$UPLOAD_KEYSTORE_BASE64" | base64 -d > android/upload-keystore.jks
+          cat > android/key.properties <<EOF
+          storeFile=upload-keystore.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
+      - name: Build signed App Bundle
+        run: flutter build appbundle --release
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-aab
+          path: build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error

@@ -5,8 +5,8 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart' as pkg_ffi;
 
 import '../../acoustics/speed_of_sound.dart';
+import '../../geometry/render_mesh.dart';
 import '../../geometry/room_shape.dart';
-import '../../geometry/voxel_grid.dart';
 import '../modal_analysis.dart';
 import 'room_mode_bindings.dart';
 
@@ -65,44 +65,37 @@ ModalAnalysisResult analyzeRoomShapeNative(
       // Copy every array out of native memory into Dart-owned typed lists
       // *before* freeing the native result -- .asTypedList() is a view into
       // native memory, not a copy, and would dangle once freed.
-      final cellCount = result.cellCount;
-      final ci = Int32List.fromList(result.ci.asTypedList(cellCount));
-      final cj = Int32List.fromList(result.cj.asTypedList(cellCount));
-      final ck = Int32List.fromList(result.ck.asTypedList(cellCount));
-      final neighbors =
-          Int32List.fromList(result.neighbors.asTypedList(cellCount * 6));
-
-      final grid = VoxelGrid.fromNativeData(
-        nx: result.nx,
-        ny: result.ny,
-        nz: result.nz,
-        h: result.h,
-        originX: result.originX,
-        originY: result.originY,
-        originZ: result.originZ,
-        cellCount: cellCount,
-        ci: ci,
-        cj: cj,
-        ck: ck,
-        neighbors: neighbors,
-      );
+      final nodeCount = result.nodeCount;
+      final triCount = result.triCount;
+      final nodeX = result.nodeX.asTypedList(nodeCount);
+      final nodeY = result.nodeY.asTypedList(nodeCount);
+      final nodeZ = result.nodeZ.asTypedList(nodeCount);
+      final positions = Float64List(nodeCount * 3);
+      for (var i = 0; i < nodeCount; i++) {
+        positions[i * 3] = nodeX[i];
+        positions[i * 3 + 1] = nodeY[i];
+        positions[i * 3 + 2] = nodeZ[i];
+      }
+      final triangles =
+          Int32List.fromList(result.triangles.asTypedList(triCount * 3));
+      final mesh = RenderMesh(positions: positions, triangles: triangles);
 
       final c = speedOfSound(temperatureC: temperatureC);
       final frequencies =
           result.frequencies.asTypedList(result.modeCount);
-      final fields = result.fields.asTypedList(result.modeCount * cellCount);
+      final fields = result.fields.asTypedList(result.modeCount * nodeCount);
       final modes = <ComputedMode>[];
       for (var m = 0; m < result.modeCount; m++) {
         final frequency = frequencies[m];
         final field = Float64List.fromList(
-          fields.sublist(m * cellCount, (m + 1) * cellCount),
+          fields.sublist(m * nodeCount, (m + 1) * nodeCount),
         );
         // Inverse of f = c*sqrt(mu)/(2*pi), matching modal_analysis.dart.
         final eigenvalue = math.pow(2 * math.pi * frequency / c, 2).toDouble();
         modes.add(ComputedMode(frequency: frequency, eigenvalue: eigenvalue, field: field));
       }
 
-      return ModalAnalysisResult(grid: grid, modes: modes);
+      return ModalAnalysisResult(mesh: mesh, modes: modes);
     } finally {
       lib.freeSolveResult(resultPtr);
     }

@@ -2,10 +2,10 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <array>
 #include <vector>
 #include <map>
 #include "polygon.h"
-#include "polygon_laplacian.h"
 #include "polygon_tet_mesh.h"
 #include "fem_assembly.h"
 #include "fem_lanczos.h"
@@ -27,64 +27,108 @@ NativeSolveResult* makeError(const char* message) {
     return r;
 }
 
-// Maps the UI's resolution slider (same meaning as the voxel grid's
-// targetPerAxis) to an FEM refinement level (uniform 1-to-4 subdivisions of
-// the ear-clipped triangulation) and extrusion layer count. Heuristic, tuned
-// by eye against the star/box benchmarks -- doubling nz with each level keeps
-// element aspect ratios reasonable as the horizontal mesh refines.
-void resolutionToFemParams(int32_t targetPerAxis, int& level, int& nz) {
-    level = std::max(0, std::min(4, (targetPerAxis - 10) / 6));
-    nz = 2 * (level + 1);
+// A mesh with too few nodes relative to the number of requested modes gives
+// severely wrong low-order frequencies -- not just "less precise", genuinely
+// unreliable -- because extracting many eigenvalues out of a tiny system
+// means resolving a large fraction of its whole spectrum, and only the
+// lowest slice of any discretization's spectrum is trustworthy. Calibrated
+// against a 5x3 m L-room requesting 8 modes: 18 nodes gave 31% error on the
+// fundamental; >=120 nodes (15 * modeCount) brought the worst-case error
+// under ~10% and the fundamental under 1%. The resolution table below
+// already clears this floor for every slider position at realistic mode
+// counts (see resolutionToFemParams's own comment), so in practice this
+// only guards edge cases the table wasn't calibrated against.
+constexpr int kMinNodesPerMode = 15;
+
+// Maps the UI's resolution slider (10-32, one integer per tick) to an FEM
+// refinement level (uniform 1-to-4 subdivisions of the ear-clipped
+// triangulation) and an extrusion layer count.
+//
+// Calibrated against the analytical modes of a 5x4x3 m box
+// (native/README.md has the full sweep): level 0-2 give 12%-40% error on
+// the fundamental mode regardless of [nz] -- genuinely unusable, not just
+// "lower quality" -- so the useful range starts at level 3 (0.66-0.69% error
+// on the box's fundamental). But a box is the *easy* case (no boundary to
+// approximate); a concave floor plan like the app's default L-room needs
+// more refinement for the same accuracy -- level 3 only gets the L-room's
+// fundamental to ~2.4-2.6% error, over a 2% floor. Level 4 fixes that
+// (~0.9-0.95% on the L-room, ~0.16% on the box), so the slider's lowest
+// setting is level 4. The highest setting is level 5 (~0.04% on the box's
+// fundamental, comfortably under a 0.1% ceiling).
+//
+// Level 5 is still the slowest setting on a concave floor plan like the
+// app's default L-room -- even with Jacobi preconditioning and the
+// Delaunay-refined base triangulation (delaunayRefine in
+// polygon_tet_mesh.h, which fixed the *dominant* cause of slow convergence:
+// see its own comment), it's ~1-8.6 seconds across level 5's nz range on
+// the default room at the default mode count, against level 4's well under
+// 1 second. The UI (custom_room_screen.dart) warns and asks for
+// confirmation before running a solve at this resolution rather than hiding
+// that cost.
+//
+// [nz] increases by exactly 1 on every single slider tick, so every
+// position on the slider changes the mesh -- unlike the previous formula,
+// where nz was purely a function of level (nz = 2*(level+1)) and dragging
+// the slider within a 6-tick band did nothing at all.
+void resolutionToFemParams(int32_t targetPerAxis, int32_t modeCount,
+                            const std::vector<Tri2D>& baseTris, double height,
+                            int& level, int& nz) {
+    int step = std::max(0, std::min(22, targetPerAxis - 10));
+    if (step < 12) {
+        level = 4;
+        nz = 6 + step;
+    } else {
+        level = 5;
+        nz = 6 + (step - 12);
+    }
+
+    // Safety net for cases the table above wasn't calibrated against (e.g. an
+    // unusually simple shape combined with a very high mode count): if this
+    // mesh still doesn't have enough nodes to plausibly support the
+    // requested mode count, bump the level further.
+    const int minNodes = kMinNodesPerMode * std::max(modeCount, 1);
+    while (level < 6) {
+        auto tris = baseTris;
+        for (int s = 0; s < level; ++s) tris = subdivide(tris);
+        auto mesh = extrudeToTets(tris, height, nz);
+        if ((int)mesh.nodes.size() >= minNodes) break;
+        level++;
+        nz = 2 * (level + 1);
+    }
 }
 
-// For each voxel cell, finds the FEM mesh node nearest to that cell's centre,
-// via a spatial hash bucketed at the same cell size as the voxel grid (so
-// each cell only needs to search its own bucket + 26 neighbours instead of
-// every node) -- computed once and reused across every mode, since the
-// nearest-node mapping doesn't depend on which mode's field is being sampled.
-std::vector<int> nearestNodePerCell(const PolygonGridInfo& info, const PolyTetMesh& mesh) {
-    auto bucketKey = [](int64_t bi, int64_t bj, int64_t bk) -> int64_t {
-        return ((bi + 1000000) << 42) | ((bj + 1000000) << 21) | (bk + 1000000);
-    };
-    std::map<int64_t, std::vector<int>> buckets;
-    for (int nd = 0; nd < (int)mesh.nodes.size(); ++nd) {
-        int bi = (int)std::floor((mesh.nodes[nd].x - info.minX) / info.h);
-        int bj = (int)std::floor((mesh.nodes[nd].y - info.minY) / info.h);
-        int bk = (int)std::floor(mesh.nodes[nd].z / info.h);
-        buckets[bucketKey(bi, bj, bk)].push_back(nd);
-    }
+// A tet's 4 triangular faces (each omitting one vertex).
+std::array<std::array<int, 3>, 4> tetFaces(const std::array<int, 4>& t) {
+    return {{
+        {t[1], t[2], t[3]},
+        {t[0], t[2], t[3]},
+        {t[0], t[1], t[3]},
+        {t[0], t[1], t[2]},
+    }};
+}
 
-    int cellCount = (int)info.ci.size();
-    std::vector<int> nearest(cellCount, -1);
-    for (int cell = 0; cell < cellCount; ++cell) {
-        double cx = info.minX + (info.ci[cell] + 0.5) * info.h;
-        double cy = info.minY + (info.cj[cell] + 0.5) * info.h;
-        double cz = (info.ck[cell] + 0.5) * info.h;
-        int bi = info.ci[cell], bj = info.cj[cell], bk = info.ck[cell];
-
-        int best = -1;
-        double bestD = 1e30;
-        for (int radius = 1; radius <= 4 && best < 0; ++radius) {
-            for (int dbi = -radius; dbi <= radius; ++dbi)
-                for (int dbj = -radius; dbj <= radius; ++dbj)
-                    for (int dbk = -radius; dbk <= radius; ++dbk) {
-                        auto it = buckets.find(bucketKey(bi + dbi, bj + dbj, bk + dbk));
-                        if (it == buckets.end()) continue;
-                        for (int nd : it->second) {
-                            double dx = mesh.nodes[nd].x - cx;
-                            double dy = mesh.nodes[nd].y - cy;
-                            double dz = mesh.nodes[nd].z - cz;
-                            double d = dx * dx + dy * dy + dz * dz;
-                            if (d < bestD) { bestD = d; best = nd; }
-                        }
-                    }
-            // radius=1 (a full 3x3x3 neighbourhood) covers virtually every
-            // cell; the loop only widens if that first pass found nothing,
-            // e.g. a cell right at the mesh's edge.
+// The mesh's outer surface: faces that belong to exactly one tet (an
+// interior face is shared by two tets and cancels out). This is the room's
+// physical boundary -- walls, floor, ceiling -- and is exactly what the 3D
+// view needs to render, with no separate voxelization step and no
+// resampling: the field values already live on these same nodes.
+std::vector<std::array<int, 3>> extractBoundaryFaces(
+    const std::vector<std::array<int, 4>>& tets) {
+    std::map<std::array<int, 3>, int> count;
+    std::map<std::array<int, 3>, std::array<int, 3>> winding;
+    for (auto& t : tets) {
+        for (auto& f : tetFaces(t)) {
+            auto key = f;
+            std::sort(key.begin(), key.end());
+            count[key]++;
+            winding[key] = f;
         }
-        nearest[cell] = best;
     }
-    return nearest;
+    std::vector<std::array<int, 3>> boundary;
+    for (auto& [key, c] : count) {
+        if (c == 1) boundary.push_back(winding[key]);
+    }
+    return boundary;
 }
 
 } // namespace
@@ -102,11 +146,11 @@ NativeSolveResult* solve_room_modes(
     for (int32_t i = 0; i < polygonVertexCount; ++i)
         poly.verts.push_back({polygonX[i], polygonY[i]});
 
-    // ---- FEM solve: the true geometry, the accurate frequencies ----
+    auto baseTris = earClipTriangulate(poly);
+    if (baseTris.empty()) return makeError("Could not triangulate the floor plan");
     int level, femNz;
-    resolutionToFemParams(targetPerAxis, level, femNz);
-    auto tris = earClipTriangulate(poly);
-    if (tris.empty()) return makeError("Could not triangulate the floor plan");
+    resolutionToFemParams(targetPerAxis, modeCount, baseTris, height, level, femNz);
+    auto tris = baseTris;
     for (int s = 0; s < level; ++s) tris = subdivide(tris);
     auto femMesh = extrudeToTets(tris, height, femNz);
 
@@ -119,41 +163,48 @@ NativeSolveResult* solve_room_modes(
 
     double c = 331.3 * std::sqrt(1.0 + temperatureC / 273.15);
 
-    // ---- Voxel grid: visualization only ----
-    PolygonGridInfo info;
-    auto voxelOp = buildPolygonLaplacian(poly, height, targetPerAxis, info);
-    int cellCount = voxelOp.cellCount;
-    if (cellCount == 0) return makeError("Floor plan voxelized to zero cells at this resolution");
+    // ---- Boundary surface: the visualization *is* the solve mesh ----
+    auto boundaryFaces = extractBoundaryFaces(femMesh.tets);
+    if (boundaryFaces.empty()) return makeError("FEM mesh has no boundary surface");
 
-    auto nearest = nearestNodePerCell(info, femMesh);
+    std::vector<int> usedNodes;
+    std::map<int, int> remap;
+    for (auto& f : boundaryFaces)
+        for (int v : f)
+            if (remap.find(v) == remap.end()) {
+                remap[v] = (int)usedNodes.size();
+                usedNodes.push_back(v);
+            }
+
+    int nodeCount = (int)usedNodes.size();
+    int triCount = (int)boundaryFaces.size();
 
     auto* result = new NativeSolveResult();
     std::memset(result, 0, sizeof(NativeSolveResult));
-    result->nx = info.nx; result->ny = info.ny; result->nz = info.nz;
-    result->h = info.h;
-    result->originX = info.minX; result->originY = info.minY; result->originZ = 0;
-    result->cellCount = cellCount;
-    result->ci = new int32_t[cellCount];
-    result->cj = new int32_t[cellCount];
-    result->ck = new int32_t[cellCount];
-    for (int i = 0; i < cellCount; ++i) {
-        result->ci[i] = info.ci[i];
-        result->cj[i] = info.cj[i];
-        result->ck[i] = info.ck[i];
+    result->nodeCount = nodeCount;
+    result->triCount = triCount;
+    result->nodeX = new double[nodeCount];
+    result->nodeY = new double[nodeCount];
+    result->nodeZ = new double[nodeCount];
+    for (int i = 0; i < nodeCount; ++i) {
+        auto& n = femMesh.nodes[usedNodes[i]];
+        result->nodeX[i] = n.x;
+        result->nodeY[i] = n.y;
+        result->nodeZ[i] = n.z;
     }
-    result->neighbors = new int32_t[cellCount * 6];
-    std::copy(voxelOp.neighbors.begin(), voxelOp.neighbors.end(), result->neighbors);
+    result->triangles = new int32_t[triCount * 3];
+    for (int i = 0; i < triCount; ++i)
+        for (int k = 0; k < 3; ++k)
+            result->triangles[i * 3 + k] = remap[boundaryFaces[i][k]];
 
     result->modeCount = (int32_t)pairs.size();
     result->frequencies = new double[pairs.size() > 0 ? pairs.size() : 1];
-    result->fields = new double[(pairs.size() > 0 ? pairs.size() : 1) * cellCount];
+    result->fields = new double[(pairs.size() > 0 ? pairs.size() : 1) * nodeCount];
     for (size_t m = 0; m < pairs.size(); ++m) {
         double mu = std::max(pairs[m].eigenvalue, 0.0);
         result->frequencies[m] = c * std::sqrt(mu) / (2 * M_PI);
-        for (int cell = 0; cell < cellCount; ++cell) {
-            int node = nearest[cell];
-            result->fields[m * (size_t)cellCount + cell] = node >= 0 ? pairs[m].vector[node] : 0.0;
-        }
+        for (int i = 0; i < nodeCount; ++i)
+            result->fields[m * (size_t)nodeCount + i] = pairs[m].vector[usedNodes[i]];
     }
 
     result->success = 1;
@@ -162,10 +213,10 @@ NativeSolveResult* solve_room_modes(
 
 void free_solve_result(NativeSolveResult* result) {
     if (!result) return;
-    delete[] result->ci;
-    delete[] result->cj;
-    delete[] result->ck;
-    delete[] result->neighbors;
+    delete[] result->nodeX;
+    delete[] result->nodeY;
+    delete[] result->nodeZ;
+    delete[] result->triangles;
     delete[] result->frequencies;
     delete[] result->fields;
     delete[] result->errorMessage;

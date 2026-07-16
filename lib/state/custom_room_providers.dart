@@ -24,7 +24,9 @@ class FloorPlan {
   final double height;
   final double temperatureC;
 
-  /// Voxel grid resolution (cells along the longest axis).
+  /// Solve-mesh quality (higher = finer mesh, more accurate, slower). Purely
+  /// a computation knob -- the 3D view renders the solve mesh's own boundary
+  /// surface directly, so there's no separate visualization resolution.
   final int resolution;
 
   /// How many of the lowest modes to compute.
@@ -152,8 +154,3 @@ final customModesProvider =
 
 /// Index of the selected computed mode (for the 3D view).
 final selectedCustomModeProvider = StateProvider<int?>((ref) => null);
-
-/// Height (metres) of the interior cross-section slice shown for the selected
-/// computed mode.
-final customSliceHeightProvider =
-    StateProvider<double>((ref) => AcousticDefaults.earHeightM);

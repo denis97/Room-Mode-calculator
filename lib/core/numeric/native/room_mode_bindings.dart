@@ -8,31 +8,18 @@ import 'dart:io';
 /// fields by size (pointers, then doubles, then int32s) so it has no interior
 /// padding -- this Dart struct mirrors that same grouped order.
 final class NativeSolveResult extends ffi.Struct {
-  external ffi.Pointer<ffi.Int32> ci;
-  external ffi.Pointer<ffi.Int32> cj;
-  external ffi.Pointer<ffi.Int32> ck;
-  external ffi.Pointer<ffi.Int32> neighbors;
+  external ffi.Pointer<ffi.Double> nodeX;
+  external ffi.Pointer<ffi.Double> nodeY;
+  external ffi.Pointer<ffi.Double> nodeZ;
+  external ffi.Pointer<ffi.Int32> triangles;
   external ffi.Pointer<ffi.Double> frequencies;
   external ffi.Pointer<ffi.Double> fields;
   external ffi.Pointer<ffi.Char> errorMessage;
 
-  @ffi.Double()
-  external double h;
-  @ffi.Double()
-  external double originX;
-  @ffi.Double()
-  external double originY;
-  @ffi.Double()
-  external double originZ;
-
   @ffi.Int32()
-  external int nx;
+  external int nodeCount;
   @ffi.Int32()
-  external int ny;
-  @ffi.Int32()
-  external int nz;
-  @ffi.Int32()
-  external int cellCount;
+  external int triCount;
   @ffi.Int32()
   external int modeCount;
   @ffi.Int32()

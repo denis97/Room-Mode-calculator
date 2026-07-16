@@ -143,12 +143,64 @@ void testEarClipOnConcavePolygon() {
     for (auto& p : pairs) check(p.eigenvalue > 0, "L-room mode eigenvalue is positive");
 }
 
+double triangleMinAngleDeg(const Tri2D& t) {
+    auto angle = [](Pt2 a, Pt2 b, Pt2 c) { // angle at b
+        double ux = a.first - b.first, uy = a.second - b.second;
+        double vx = c.first - b.first, vy = c.second - b.second;
+        double cosv = (ux * vx + uy * vy) /
+                      (std::sqrt(ux * ux + uy * uy) * std::sqrt(vx * vx + vy * vy));
+        return std::acos(std::max(-1.0, std::min(1.0, cosv))) * 180.0 / M_PI;
+    };
+    return std::min({angle(t[2], t[0], t[1]), angle(t[0], t[1], t[2]), angle(t[1], t[2], t[0])});
+}
+
+void testDelaunayRefinementFixesSlivers() {
+    printf("\n-- Delaunay refinement fixes ear-clipping's slivers --\n");
+    // Regression: earClipTriangulate has no quality objective of its own --
+    // it greedily takes the first valid ear -- and on the app's default
+    // L-room that used to leave a 5.19 degree sliver in the *base*
+    // triangulation. Since uniform 1-to-4 subdivision splits every triangle
+    // into 4 similar copies (same angles, smaller size), that sliver used to
+    // persist unchanged at every mesh resolution and was the real cause of
+    // the linear solver needing ~8x more CG iterations on this shape than a
+    // same-size box (see native/README.md). earClipTriangulate now applies
+    // a Delaunay edge-flip pass (delaunayRefine) to its own output, which
+    // measured at bringing this specific case up to 38.66 degrees -- matches
+    // a plain box's own triangulation quality, since the defect was a bad
+    // diagonal choice, not anything inherent to the L-room's geometry.
+    Polygon lRoom;
+    lRoom.verts = {{0, 0}, {5, 0}, {5, 3}, {2.5, 3}, {2.5, 5}, {0, 5}};
+    auto tris = earClipTriangulate(lRoom);
+
+    double minAngle = 180.0;
+    for (auto& t : tris) minAngle = std::min(minAngle, triangleMinAngleDeg(t));
+    char msg[128];
+    snprintf(msg, sizeof(msg), "default L-room's base triangulation has no sliver (min angle %.2f degrees)",
+             minAngle);
+    check(minAngle > 20.0, msg);
+
+    // Delaunay flips only reorder existing diagonals -- they must never
+    // change the polygon's actual area.
+    double trueArea = lRoom.area();
+    double triArea = 0;
+    for (auto& t : tris) {
+        double x1 = t[0].first, y1 = t[0].second;
+        double x2 = t[1].first, y2 = t[1].second;
+        double x3 = t[2].first, y3 = t[2].second;
+        triArea += std::fabs((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1)) / 2.0;
+    }
+    snprintf(msg, sizeof(msg), "refined triangulation area %.4f still matches true polygon area %.4f",
+             triArea, trueArea);
+    check(std::fabs(triArea - trueArea) < 1e-6, msg);
+}
+
 int main() {
     testBoxFdm();
     testBoxFem();
     testStarFdmNoSpuriousModes();
     testStarFemSanity();
     testEarClipOnConcavePolygon();
+    testDelaunayRefinementFixesSlivers();
     printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL TESTS PASSED" : "TESTS FAILED",
            failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;

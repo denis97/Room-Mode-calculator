@@ -1,22 +1,26 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
-import '../../core/geometry/voxel_grid.dart';
+import '../../core/geometry/render_mesh.dart';
 import '../../core/numeric/modal_analysis.dart';
+import '../app_theme.dart';
 
-/// A touch-rotatable 3D view of a computed (arbitrary-shape) mode. Renders the
-/// room's surface — every voxel face that borders a wall — colored by the
-/// mode's pressure field (red +, blue −, dark ≈ node). Drag to orbit.
+/// A touch-rotatable 3D view of a computed (arbitrary-shape) mode. Renders
+/// the room's boundary surface -- the native FEM solver's own solve-mesh
+/// boundary, or the Dart FDM fallback's voxel-grid boundary -- colored by
+/// the mode's pressure field with smooth per-vertex (Gouraud) shading via
+/// [Canvas.drawVertices]. Drag to orbit.
 class ComputedMode3DView extends StatefulWidget {
   const ComputedMode3DView({
     super.key,
-    required this.grid,
+    required this.mesh,
     required this.mode,
   });
 
-  final VoxelGrid grid;
+  final RenderMesh mesh;
   final ComputedMode mode;
 
   @override
@@ -37,12 +41,11 @@ class _ComputedMode3DViewState extends State<ComputedMode3DView> {
         });
       },
       child: CustomPaint(
-        painter: _ComputedFieldPainter(
-          grid: widget.grid,
+        painter: _MeshFieldPainter(
+          mesh: widget.mesh,
           field: widget.mode.field,
           yaw: _yaw,
           pitch: _pitch,
-          edgeColor: Theme.of(context).colorScheme.onSurface,
         ),
         child: const SizedBox.expand(),
       ),
@@ -50,120 +53,107 @@ class _ComputedMode3DViewState extends State<ComputedMode3DView> {
   }
 }
 
-class _ComputedFieldPainter extends CustomPainter {
-  _ComputedFieldPainter({
-    required this.grid,
+class _MeshFieldPainter extends CustomPainter {
+  _MeshFieldPainter({
+    required this.mesh,
     required this.field,
     required this.yaw,
     required this.pitch,
-    required this.edgeColor,
   });
 
-  final VoxelGrid grid;
+  final RenderMesh mesh;
   final Float64List field;
   final double yaw;
   final double pitch;
-  final Color edgeColor;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final h = grid.h;
-    final boxX = grid.nx * h, boxY = grid.ny * h, boxZ = grid.nz * h;
-    final cx0 = grid.originX + boxX / 2;
-    final cy0 = grid.originY + boxY / 2;
-    final cz0 = grid.originZ + boxZ / 2;
-    final diag = math.sqrt(boxX * boxX + boxY * boxY + boxZ * boxZ);
-    final scale = 0.62 * math.min(size.width, size.height) / diag;
+    final nodeCount = mesh.nodeCount;
+    // ui.Vertices.raw's indices are Uint16, so node indices must fit in 16
+    // bits. In practice solve meshes top out in the hundreds of boundary
+    // nodes even at max resolution/mode-count (verified against the UI's
+    // slider ranges), so this only guards a pathological case.
+    if (nodeCount == 0 || nodeCount > 65535) return;
+
+    var minX = double.infinity, minY = double.infinity, minZ = double.infinity;
+    var maxX = -double.infinity, maxY = -double.infinity, maxZ = -double.infinity;
+    for (var i = 0; i < nodeCount; i++) {
+      final x = mesh.x(i), y = mesh.y(i), z = mesh.z(i);
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+      if (z < minZ) minZ = z;
+      if (z > maxZ) maxZ = z;
+    }
+    final cx0 = (minX + maxX) / 2, cy0 = (minY + maxY) / 2, cz0 = (minZ + maxZ) / 2;
+    final diag = math.sqrt(math.pow(maxX - minX, 2) + math.pow(maxY - minY, 2) +
+        math.pow(maxZ - minZ, 2));
+    final scale = diag > 0 ? 0.62 * math.min(size.width, size.height) / diag : 1.0;
     final center = Offset(size.width / 2, size.height / 2);
 
     final cosY = math.cos(yaw), sinY = math.sin(yaw);
     final cosP = math.cos(pitch), sinP = math.sin(pitch);
 
-    (Offset, double) project(double x, double y, double z) {
-      final px = x - cx0, py = y - cy0, pz = z - cz0;
+    // Project every node once; triangles just reference these shared points,
+    // so (unlike the old per-voxel-face painter) no vertex is ever
+    // duplicated for geometry -- only depth-sorting needs a second pass.
+    final points = Float32List(nodeCount * 2);
+    final depths = Float64List(nodeCount);
+    for (var i = 0; i < nodeCount; i++) {
+      final px = mesh.x(i) - cx0, py = mesh.y(i) - cy0, pz = mesh.z(i) - cz0;
       final x1 = px * cosY - py * sinY;
       final y1 = px * sinY + py * cosY;
       final y2 = y1 * cosP - pz * sinP;
       final z2 = y1 * sinP + pz * cosP;
-      return (center + Offset(x1 * scale, -z2 * scale), y2);
+      final o = center + Offset(x1 * scale, -z2 * scale);
+      points[i * 2] = o.dx;
+      points[i * 2 + 1] = o.dy;
+      depths[i] = y2;
     }
 
-    // Normalize field for color mapping.
     var maxAbs = 1e-12;
     for (final v in field) {
       final a = v.abs();
       if (a > maxAbs) maxAbs = a;
     }
-
-    final quads = <_Quad>[];
-    // Face corner offsets (in cell units) for each of the 6 neighbour dirs.
-    for (var c = 0; c < grid.cellCount; c++) {
-      final i = grid.ci[c], j = grid.cj[c], k = grid.ck[c];
-      final x0 = grid.originX + i * h, x1 = x0 + h;
-      final y0 = grid.originY + j * h, y1 = y0 + h;
-      final z0 = grid.originZ + k * h, z1 = z0 + h;
-      final base = c * 6;
-      final color = _pressureColor(field[c] / maxAbs);
-
-      void face(List<(double, double, double)> corners) {
-        final projected = <Offset>[];
-        var depth = 0.0;
-        for (final (x, y, z) in corners) {
-          final (o, d) = project(x, y, z);
-          projected.add(o);
-          depth += d;
-        }
-        quads.add(_Quad(projected, depth / corners.length, color));
-      }
-
-      if (grid.neighbors[base + 0] < 0) {
-        face([(x0, y0, z0), (x0, y1, z0), (x0, y1, z1), (x0, y0, z1)]);
-      }
-      if (grid.neighbors[base + 1] < 0) {
-        face([(x1, y0, z0), (x1, y1, z0), (x1, y1, z1), (x1, y0, z1)]);
-      }
-      if (grid.neighbors[base + 2] < 0) {
-        face([(x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1)]);
-      }
-      if (grid.neighbors[base + 3] < 0) {
-        face([(x0, y1, z0), (x1, y1, z0), (x1, y1, z1), (x0, y1, z1)]);
-      }
-      if (grid.neighbors[base + 4] < 0) {
-        face([(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0)]);
-      }
-      if (grid.neighbors[base + 5] < 0) {
-        face([(x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]);
-      }
+    final colors = Int32List(nodeCount);
+    for (var i = 0; i < nodeCount; i++) {
+      colors[i] = _pressureColor(field[i] / maxAbs).toARGB32();
     }
 
-    quads.sort((p, q) => p.depth.compareTo(q.depth));
-    final fill = Paint()..style = PaintingStyle.fill;
-    for (final quad in quads) {
-      canvas.drawPath(
-        Path()..addPolygon(quad.points, true),
-        fill..color = quad.color,
-      );
+    // Painter's algorithm: draw triangles back-to-front. Only the triangle
+    // *order* is sorted (via their average vertex depth) -- points/colors
+    // stay shared, so this is just a reordering of the indices array.
+    final triCount = mesh.triangleCount;
+    final order = List<int>.generate(triCount, (i) => i);
+    double triDepth(int t) =>
+        (depths[mesh.triangles[t * 3]] +
+            depths[mesh.triangles[t * 3 + 1]] +
+            depths[mesh.triangles[t * 3 + 2]]) /
+        3;
+    order.sort((a, b) => triDepth(a).compareTo(triDepth(b)));
+
+    final indices = Uint16List(triCount * 3);
+    for (var i = 0; i < triCount; i++) {
+      final t = order[i];
+      indices[i * 3] = mesh.triangles[t * 3];
+      indices[i * 3 + 1] = mesh.triangles[t * 3 + 1];
+      indices[i * 3 + 2] = mesh.triangles[t * 3 + 2];
     }
+
+    final vertices = ui.Vertices.raw(
+      ui.VertexMode.triangles,
+      points,
+      colors: colors,
+      indices: indices,
+    );
+    canvas.drawVertices(vertices, ui.BlendMode.srcOver, Paint());
   }
 
-  Color _pressureColor(double v) {
-    final m = v.abs().clamp(0.0, 1.0);
-    if (v >= 0) {
-      return Color.fromARGB(
-          255, (m * 255).round(), (m * 60).round(), (m * 40).round());
-    }
-    return Color.fromARGB(
-        255, (m * 40).round(), (m * 80).round(), (m * 255).round());
-  }
+  Color _pressureColor(double v) => fieldColor(v);
 
   @override
-  bool shouldRepaint(_ComputedFieldPainter old) =>
-      old.field != field || old.yaw != yaw || old.pitch != pitch;
-}
-
-class _Quad {
-  _Quad(this.points, this.depth, this.color);
-  final List<Offset> points;
-  final double depth;
-  final Color color;
+  bool shouldRepaint(_MeshFieldPainter old) =>
+      old.mesh != mesh || old.field != field || old.yaw != yaw || old.pitch != pitch;
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'ui/app_theme.dart';
 import 'ui/screens/root_screen.dart';
 
 void main() {
@@ -15,13 +16,7 @@ class RoomModeApp extends StatelessWidget {
     return MaterialApp(
       title: 'Room Mode Calculator',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF3F6BFF),
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-      ),
+      theme: buildAppTheme(),
       home: const RootScreen(),
     );
   }

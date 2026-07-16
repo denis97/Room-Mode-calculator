@@ -4,43 +4,42 @@
 // C ABI for the native room-mode solver, called from Dart via dart:ffi (see
 // lib/core/numeric/native/room_mode_bindings.dart). Solves the room's true
 // geometry with FEM (accurate on arbitrary/non-rectilinear floor plans, see
-// native/README.md), then resamples each mode's field onto a voxel grid so
-// the result matches the shape the existing Dart VoxelGrid/ComputedMode/
-// ModalAnalysisResult classes -- and the UI widgets built around them --
-// already expect. No UI code needs to change to consume this.
+// native/README.md) and returns the field directly on the FEM mesh's own
+// boundary surface -- no separate visualization voxel grid, no resampling.
+// Field values live at mesh nodes (smooth, shared between adjacent
+// triangles); the UI renders them with per-vertex color interpolation.
 extern "C" {
 
-// Fields are grouped by size (pointers, then doubles, then int32s) so the
-// struct has no interior padding -- its layout is then unambiguous to mirror
-// exactly in Dart's FFI Struct (see lib/core/numeric/native/
-// room_mode_bindings.dart), instead of depending on the C compiler's padding
-// rules for a mixed-size field order.
+// Fields are grouped by size (pointers, then int32s) so the struct has no
+// interior padding -- its layout is then unambiguous to mirror exactly in
+// Dart's FFI Struct (see lib/core/numeric/native/room_mode_bindings.dart),
+// instead of depending on the C compiler's padding rules for a mixed-size
+// field order.
 struct NativeSolveResult {
     // -- pointers (8-byte aligned) --
-    int32_t* ci;           // cellCount
-    int32_t* cj;           // cellCount
-    int32_t* ck;           // cellCount
-    int32_t* neighbors;    // cellCount * 6
-    double* frequencies;   // modeCount, ascending
-    double* fields;        // modeCount * cellCount, row-major (mode-major),
-                            // resampled from the FEM solution onto the voxel grid
-    char* errorMessage;    // null when success != 0
-
-    // -- doubles (8-byte aligned) --
-    double h, originX, originY, originZ;
+    double* nodeX;          // nodeCount: boundary-surface node positions
+    double* nodeY;          // nodeCount
+    double* nodeZ;          // nodeCount
+    int32_t* triangles;     // triCount * 3, indices into the node arrays
+    double* frequencies;    // modeCount, ascending
+    double* fields;         // modeCount * nodeCount, row-major (mode-major),
+                             // the FEM eigenvector's own values at each
+                             // boundary node -- no resampling involved
+    char* errorMessage;     // null when success != 0
 
     // -- int32s (4-byte aligned) --
-    int32_t nx, ny, nz;
-    int32_t cellCount;
+    int32_t nodeCount;
+    int32_t triCount;
     int32_t modeCount;
-    int32_t success;       // 0 on failure; check errorMessage
+    int32_t success;        // 0 on failure; check errorMessage
 };
 
 // [polygonX]/[polygonY]: floor plan vertices (metres), [polygonVertexCount] >= 3.
 // [height]: room height (metres). [temperatureC]: air temperature.
-// [targetPerAxis]: resolution control (same meaning/range as the Dart
-// FloorPlan.resolution slider, 10-32) -- drives both the FEM mesh refinement
-// and the visualization voxel grid's cell size.
+// [targetPerAxis]: mesh quality control (higher = finer FEM mesh, more
+// accurate but slower). Purely a computation-quality knob now -- it no
+// longer has any bearing on visualization detail, since the returned
+// surface *is* the solve mesh's own boundary.
 // [modeCount]: number of lowest modes to return.
 //
 // Returns a heap-allocated result; the caller must pass it to
