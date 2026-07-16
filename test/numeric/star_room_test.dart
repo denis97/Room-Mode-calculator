@@ -1,12 +1,13 @@
+import 'dart:ffi' as ffi;
+import 'dart:typed_data';
+import 'package:ffi/ffi.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:room_mode_calculator/core/numeric/modal_analysis.dart';
-import 'package:room_mode_calculator/core/geometry/room_shape.dart';
-import 'package:room_mode_calculator/core/numeric/native/native_modal_solver.dart';
+import 'package:room_mode_calculator/core/numeric/native/room_mode_bindings.dart';
 import 'dart:math' as math;
 
 void main() {
   group('Custom room solver - complex geometries', () {
-    test('10-point star floor plan at various resolutions', () async {
+    test('10-point star floor plan at various resolutions', () {
       // Generate a 10-point star: alternating inner & outer radii
       final vertices = <(double, double)>[];
       const outerRadius = 5.0;
@@ -22,11 +23,8 @@ void main() {
         ));
       }
 
-      final room = CustomRoomShape(
-        floorPlanX: vertices.map((v) => v.$1).toList(),
-        floorPlanY: vertices.map((v) => v.$2).toList(),
-        heightM: 3.0,
-      );
+      final polygonX = vertices.map((v) => v.$1).toList();
+      final polygonY = vertices.map((v) => v.$2).toList();
 
       print('Testing 10-point star: ${vertices.length} vertices');
       print('Vertices: $vertices');
@@ -35,27 +33,61 @@ void main() {
       for (int res = 10; res <= 30; res += 5) {
         try {
           print('\nResolution: $res');
-          final result = await nativeModalSolver(
-            room: room,
-            modeCount: 8,
-            resolutionPerAxis: res,
+
+          final nativeX =
+              polygonX.cast<double>().toList(); // FFI conversion
+          final nativeY =
+              polygonY.cast<double>().toList();
+
+          // Allocate native memory for polygon vertices
+          final ptrX = calloc<ffi.Double>(nativeX.length);
+          final ptrY = calloc<ffi.Double>(nativeY.length);
+
+          // Copy data to native memory
+          for (var i = 0; i < nativeX.length; i++) {
+            ptrX[i] = nativeX[i];
+            ptrY[i] = nativeY[i];
+          }
+
+          // Call native solver
+          final lib = RoomModeNativeLibrary.instance;
+          final result = lib.solveRoomModes(
+            ptrX,
+            ptrY,
+            nativeX.length,
+            3.0, // height
+            20.0, // temperature C
+            res, // targetPerAxis
+            8, // modeCount
           );
 
-          if (result == null) {
-            print('  -> Solver returned null');
+          // Free native memory
+          calloc.free(ptrX);
+          calloc.free(ptrY);
+
+          if (result.ref.success == 0) {
+            final errPtr = result.ref.errorMessage;
+            final errMsg = errPtr == ffi.nullptr
+                ? 'Unknown error'
+                : errPtr.cast<Utf8>().toDartString();
+            print('  -> ERROR: $errMsg');
+            lib.freeSolveResult(result);
             continue;
           }
 
-          print('  -> Success: ${result.modes.length} modes computed');
-          print('  -> Mesh nodes: ${result.mesh.positions.length ~/ 3}');
-          print('  -> Mesh triangles: ${result.mesh.triangles.length ~/ 3}');
+          print(
+              '  -> Success: ${result.ref.modeCount} modes, ${result.ref.nodeCount} nodes, ${result.ref.triCount ~/ 3} triangles');
 
           // Print mode frequencies
-          for (var i = 0; i < result.modes.length; i++) {
-            print('     Mode ${i + 1}: ${result.modes[i].frequency.toStringAsFixed(1)} Hz');
+          final freqs =
+              result.ref.frequencies.asTypedList(result.ref.modeCount);
+          for (var i = 0; i < result.ref.modeCount; i++) {
+            print('     Mode ${i + 1}: ${freqs[i].toStringAsFixed(1)} Hz');
           }
+
+          lib.freeSolveResult(result);
         } catch (e) {
-          print('  -> ERROR: $e');
+          print('  -> EXCEPTION: $e');
         }
       }
     });
