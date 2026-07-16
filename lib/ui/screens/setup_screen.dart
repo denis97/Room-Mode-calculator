@@ -96,7 +96,7 @@ class _CuboidSetup extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Container(
-          height: 170,
+          height: 190,
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: AppColors.surface,

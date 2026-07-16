@@ -73,7 +73,7 @@ class _IsoBoxPainter extends CustomPainter {
       minY = math.min(minY, p.dy);
       maxY = math.max(maxY, p.dy);
     }
-    const pad = 30.0;
+    const pad = 34.0;
     final scale = math.min(
       (size.width - pad * 2) / (maxX - minX),
       (size.height - pad * 2) / (maxY - minY),
@@ -105,20 +105,34 @@ class _IsoBoxPainter extends CustomPainter {
     }
 
     final labelStyle = monoStyle(
-        fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accent);
+        fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accent);
+    final pillPaint = Paint()..color = AppColors.surfaceAlt.withValues(alpha: 0.9);
+    final pillBorder = Paint()
+      ..color = AppColors.border
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
     void label(String text, Offset at) {
       final tp = TextPainter(
         text: TextSpan(text: text, style: labelStyle),
         textDirection: TextDirection.ltr,
       )..layout();
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromCenter(
+            center: at,
+            width: tp.width + 10,
+            height: tp.height + 5),
+        const Radius.circular(5),
+      );
+      canvas.drawRRect(rect, pillPaint);
+      canvas.drawRRect(rect, pillBorder);
       tp.paint(canvas, at - Offset(tp.width / 2, tp.height / 2));
     }
 
     Offset mid(int a, int b) =>
         Offset.lerp(s(corners[a]), s(corners[b]), 0.5)!;
-    label('L ${l.toStringAsFixed(1)}', mid(0, 1) + const Offset(0, 14));
-    label('W ${w.toStringAsFixed(1)}', mid(1, 2) + const Offset(20, 0));
-    label('H ${h.toStringAsFixed(1)}', mid(0, 4) + const Offset(-18, 0));
+    label('L ${l.toStringAsFixed(1)}', mid(0, 1) + const Offset(0, 20));
+    label('W ${w.toStringAsFixed(1)}', mid(1, 2) + const Offset(28, 0));
+    label('H ${h.toStringAsFixed(1)}', mid(0, 4) + const Offset(-24, 0));
   }
 
   @override
