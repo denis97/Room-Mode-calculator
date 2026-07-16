@@ -1,4 +1,4 @@
-package com.roommodes.room_mode_calculator
+package com.denodes.modeMap
 
 import io.flutter.embedding.android.FlutterActivity
 
