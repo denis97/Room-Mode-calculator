@@ -189,19 +189,23 @@ class _RoundIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final enabled = onTap != null;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: filled ? AppColors.accentSoft : AppColors.surfaceAlt,
-          borderRadius: BorderRadius.circular(12),
+      child: Opacity(
+        opacity: enabled ? 1 : 0.35,
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: filled ? AppColors.accentSoft : AppColors.surfaceAlt,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon,
+              size: iconSize,
+              color: filled ? AppColors.accent : AppColors.textSecondary),
         ),
-        child: Icon(icon,
-            size: iconSize,
-            color: filled ? AppColors.accent : AppColors.textSecondary),
       ),
     );
   }
@@ -769,17 +773,21 @@ class _NavArrow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final enabled = onTap != null;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: AppColors.control,
-          borderRadius: BorderRadius.circular(14),
+      child: Opacity(
+        opacity: enabled ? 1 : 0.35,
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: AppColors.control,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(icon, color: AppColors.textPrimary),
         ),
-        child: Icon(icon, color: AppColors.textPrimary),
       ),
     );
   }
@@ -808,7 +816,8 @@ class _AllModesButton extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.menu, size: 16, color: AppColors.textSecondary),
+                const Icon(Icons.format_list_bulleted,
+                    size: 16, color: AppColors.textSecondary),
                 const SizedBox(width: 9),
                 Text('All $count modes',
                     style: const TextStyle(

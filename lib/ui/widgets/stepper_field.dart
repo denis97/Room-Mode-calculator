@@ -33,6 +33,11 @@ class StepperField extends StatelessWidget {
 
   String get _shown => value.toStringAsFixed(decimals);
 
+  bool get _canDecrement =>
+      double.parse((value - step).toStringAsFixed(decimals)) >= min;
+  bool get _canIncrement =>
+      double.parse((value + step).toStringAsFixed(decimals)) <= max;
+
   void _step(double delta) {
     final v = double.parse((value + delta).toStringAsFixed(decimals));
     if (v >= min && v <= max) onChanged(v);
@@ -99,7 +104,9 @@ class StepperField extends StatelessWidget {
               ],
             ),
           ),
-          _StepButton(icon: Icons.remove, onTap: () => _step(-step)),
+          _StepButton(
+              icon: Icons.remove,
+              onTap: _canDecrement ? () => _step(-step) : null),
           SizedBox(
             width: 74,
             child: InkWell(
@@ -115,7 +122,8 @@ class StepperField extends StatelessWidget {
               ),
             ),
           ),
-          _StepButton(icon: Icons.add, onTap: () => _step(step)),
+          _StepButton(
+              icon: Icons.add, onTap: _canIncrement ? () => _step(step) : null),
         ],
       ),
     );
@@ -126,21 +134,25 @@ class _StepButton extends StatelessWidget {
   const _StepButton({required this.icon, required this.onTap});
 
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final enabled = onTap != null;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(9),
-      child: Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: AppColors.control,
-          borderRadius: BorderRadius.circular(9),
+      child: Opacity(
+        opacity: enabled ? 1 : 0.35,
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: AppColors.control,
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Icon(icon, size: 18, color: AppColors.textPrimary),
         ),
-        child: Icon(icon, size: 18, color: AppColors.textPrimary),
       ),
     );
   }
