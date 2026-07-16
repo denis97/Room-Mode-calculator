@@ -394,14 +394,12 @@ lib/
     widgets/       CustomPainter visualizations, floor-plan editor, placement
                    panel, audio-backed keyboard, room-quality card
   audio/           on-the-fly sine-tone synthesis
-  monetization/    ads (banner + capped interstitial, UMP consent) and the
-                   one-time Pro (remove-ads) in-app purchase
 native/            C++ FEM/FDM solver, called via dart:ffi -- see native/README.md
 android/  ios/     platform projects (committed, not regenerated -- android/
                    carries the CMake/NDK wiring that builds native/)
 tool/              make_icon.py — regenerates the launcher-icon master art
 test/
-  acoustics/  geometry/  numeric/  state/  widgets/  monetization/
+  acoustics/  geometry/  numeric/  state/  widgets/
                    unit + widget tests anchoring the maths and the gating logic
 ```
 
@@ -430,9 +428,7 @@ Unit tests anchor the maths to known values, for example:
 - voxelization/connectivity and floor-area (shoelace),
 - **placement**: corner sources excite every mode; a source on a mode's nodal
   plane excites nothing; a symmetric stereo pair cancels odd-order width modes;
-  the response is reciprocal in speaker/listener,
-- **monetization gating**: ads stay off under `flutter test`, Pro disables ads,
-  and the interstitial frequency cap holds.
+  the response is reciprocal in speaker/listener.
 
 ## CI & release artifacts
 
@@ -476,24 +472,22 @@ keyPassword=...
 `.github/workflows/release.yml` builds a **signed AAB on every `v*` tag**.
 It needs these repository secrets: `UPLOAD_KEYSTORE_BASE64`
 (`base64 -w0 upload-keystore.jks`), `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
-`KEY_PASSWORD`, and optionally `ADMOB_APP_ID`.
+`KEY_PASSWORD`.
 
-### Monetization wiring
+### Pricing
 
-One free app: ads for everyone, a one-time **`pro_no_ads`** in-app product
-removes them (`lib/monetization/`). Ads only appear as a banner inside the
-custom-solve wait overlay and as a frequency-capped interstitial (max 3 per
-session, ≥3 min apart) when opening the viewer. GDPR consent runs through
-Google UMP before ad init.
+The app is a **paid, one-time-purchase app** (no ads, no in-app purchases,
+no data collection) — the price is set entirely in Play Console, not in
+code. Set it there when promoting the first build to production.
 
-Every checkout builds with **Google's test ad IDs** — safe by construction.
-Production IDs are injected at release time only:
-
-- AdMob **app ID** → `ADMOB_APP_ID` secret (manifest placeholder),
-- ad **unit IDs** → `--dart-define=ADMOB_BANNER_UNIT=…` /
-  `ADMOB_INTERSTITIAL_UNIT=…`,
-- the `pro_no_ads` product must be created in Play Console → Monetize →
-  In-app products (price ~€3–5), matching `kProProductId`.
+Play Store policy does not allow flipping a live production release from
+free to paid, only the reverse — so the price must be decided *before* the
+first production release. This is not a blocker for a free pre-launch: app
+installs distributed via Play Console's **testing tracks** (internal,
+closed, open) are always free for testers regardless of the eventual
+listing price, since testing tracks are not a "release" in the policy
+sense. Run closed/open testing to gather feedback and reviews, then set
+the real price only when promoting the tested build to production.
 
 The launcher icon set regenerates from `assets/icon/` via
 `dart run flutter_launcher_icons`; the master art comes from
@@ -502,15 +496,15 @@ The launcher icon set regenerates from `assets/icon/` via
 ### Play Console checklist (account side)
 
 1. Developer account; **personal accounts must run a 14-day closed test with
-   12 testers before production** — start this first.
+   12 testers before production** — start this first (this also serves as
+   the free pre-launch phase, see "Pricing" above).
 2. Store listing: title, descriptions, ≥2 screenshots, 1024×500 feature
    graphic.
-3. **Privacy policy URL** (required with AdMob) + Data safety form
-   (declares ad-related device identifiers).
-4. Content rating questionnaire; target audience 13+ (ads must not be
-   child-directed).
-5. Upload the tagged AAB from the release workflow, roll out to the closed
-   track, then production.
+3. **Privacy policy URL** + Data safety form (declare no data collected).
+4. Content rating questionnaire; target audience is general/all ages (no
+   ads, no data collection).
+5. Set the app price, then upload the tagged AAB from the release workflow,
+   roll out to the closed track, then production.
 
 ## Roadmap
 
@@ -518,7 +512,7 @@ Done: analytical cuboid calculator, room-quality metrics, on-device numerical
 solver for arbitrary rooms (native FEM, with a Dart FDM fallback), rotatable 3D
 mode-shape visualization, floor-plan editor, speaker/listener placement with
 stereo-pair modeling and a flatness advisor, the Studio-themed Setup/Viewer
-flow, and Play-release scaffolding (signing, icon, ads + Pro unlock).
+flow, and Play-release scaffolding (signing, icon, paid-app listing).
 
 Possible next steps: finish the iOS native wiring (see `native/README.md`),
 placement for custom (non-cuboid) rooms (needs interior field sampling from the

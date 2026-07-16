@@ -11,8 +11,6 @@ name: Release AAB
 #   KEYSTORE_PASSWORD       keystore password
 #   KEY_ALIAS               key alias (e.g. `upload`)
 #   KEY_PASSWORD            key password
-#   ADMOB_APP_ID            (optional) real AdMob application ID; when unset
-#                           the bundle ships Google's test-ads app ID
 #
 # The produced .aab is attached as a workflow artifact; download it and
 # upload to the Play Console (or wire a Play publish action later).
@@ -66,8 +64,6 @@ jobs:
           EOF
 
       - name: Build signed App Bundle
-        env:
-          ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
         run: flutter build appbundle --release
 
       - name: Upload AAB artifact

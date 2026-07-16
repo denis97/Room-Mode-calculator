@@ -59,7 +59,7 @@ ModeMap uses rigorous acoustical physics to calculate modal frequencies based on
 
 #### Privacy & Offline
 
-Your room data and all acoustic analyses stay on your device. We don't collect, store, or transmit any of your data. ModeMap works completely offline—no internet connection required.
+Your room data and all acoustic analyses stay on your device. We don't collect, store, or transmit any of your data — there are no ads, no analytics, and no internet connection required. ModeMap works completely offline, and is a one-time purchase with no ads, ever.
 
 ---
 
@@ -70,6 +70,7 @@ Your room data and all acoustic analyses stay on your device. We don't collect, 
 • Custom room shapes beyond simple rectangles
 • Tap modes to hear frequencies and see pressure patterns
 • Works completely offline—no internet required
+• No ads, ever—one-time purchase
 • Professional-grade acoustic analysis
 • Intuitive, modern interface
 
@@ -111,11 +112,14 @@ Your room data and all acoustic analyses stay on your device. We don't collect, 
 
 ## Additional Notes for Store Submission
 
+### Pricing
+ModeMap is a **paid app** (suggested price: $1 USD / €1 EUR), no ads, no in-app purchases. Play Store policy doesn't allow converting a live free release to paid, so the price must be set before the first production release — set it in Play Console when promoting the tested build to production, not before. Free access during closed/open testing (pre-launch) is handled automatically by Play Console's testing tracks and doesn't require a separate free version.
+
 ### Compliance
-- **Privacy**: No data collection, on-device only—privacy policy complies with Play Store requirements
+- **Privacy**: No data collection, no ads, no internet access, on-device only—privacy policy complies with Play Store requirements
 - **Content Rating**: Likely "Low Maturity" (educational/productivity app with no sensitive content)
-- **Age Rating**: 3+ years (educational, no ads that are problematic for children; note: contains Google Ads)
-- **Permissions**: Internet (for ads only), no sensitive permissions required
+- **Age Rating**: General audience — no ads, no data collection, no age-gating concerns
+- **Permissions**: None required (no internet, no sensitive permissions)
 
 ### Positioning
 - **Category**: Education or Productivity (check Play Store—may be "Utilities")
@@ -127,17 +131,17 @@ Your room data and all acoustic analyses stay on your device. We don't collect, 
 room acoustics, acoustic modes, room analysis, audio, acoustics, studio, acoustics app, room treatment, audio engineering, acoustic resonance, room optimization, sound engineering
 
 ### Promotional Text (optional)
-"Professional room acoustic analysis, now offline and on your phone. Understand your room's acoustic modes with instant, on-device calculations and 3D pressure visualization."
+"Professional room acoustic analysis, now offline and on your phone. Understand your room's acoustic modes with instant, on-device calculations and 3D pressure visualization. No ads, ever."
 
 ---
 
 ## Testing Checklist Before Submission
 
 - [ ] App launches without crashes on various Android devices
-- [ ] All permissions are used only as described (Internet for ads only)
+- [ ] No permissions requested beyond what's strictly necessary
 - [ ] Privacy policy is accurate and accessible in-app
 - [ ] App name "ModeMap" is consistent across AndroidManifest.xml and app
-- [ ] Google Ads load and display correctly
-- [ ] No data is transmitted to external services (except Google Ads)
+- [ ] No network calls are made anywhere in the app
+- [ ] Price is set correctly in Play Console before promoting to production
 - [ ] All screenshots are clear, accurate, and represent actual app functionality
 - [ ] Developer contact email is correct and monitored

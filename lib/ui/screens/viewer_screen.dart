@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../audio/tone_player.dart';
 import '../../core/acoustics/mode.dart';
-import '../../monetization/solve_banner.dart';
 import '../../core/acoustics/note_mapping.dart';
 import '../../core/geometry/room_shape.dart' hide BoxShape;
 import '../../core/numeric/modal_analysis.dart';
@@ -422,9 +421,6 @@ class _CustomViewer extends ConsumerWidget {
             SizedBox(height: 12),
             Text('Solving the eigenproblem…',
                 style: TextStyle(color: AppColors.textMuted)),
-            // Fills the only genuinely dead wait in the app; renders
-            // nothing at all for Pro users or while unfilled.
-            SolveBanner(),
           ],
         ),
       ),

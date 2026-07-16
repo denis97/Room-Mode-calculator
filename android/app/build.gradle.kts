@@ -36,15 +36,6 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // AdMob application ID for the manifest. Defaults to Google's public
-        // *test* app ID so any checkout builds (and serves test ads); the
-        // real ID comes from -PADMOB_APP_ID=... or the ADMOB_APP_ID
-        // environment variable (the release workflow sets it from a secret).
-        manifestPlaceholders["admobAppId"] =
-            (project.findProperty("ADMOB_APP_ID") as String?)
-                ?: System.getenv("ADMOB_APP_ID")
-                ?: "ca-app-pub-3940256099942544~3347511713"
-
         externalNativeBuild {
             cmake {
                 arguments += listOf("-DANDROID_STL=c++_shared")
@@ -87,11 +78,8 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
-            // Keep rules for the ads/consent/billing SDKs (release-only
-            // startup crashes when R8 strips the consent SDK).
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
             )
             // Diagnostic escape hatch: NO_MINIFY=true builds a release APK
             // with R8 and resource shrinking off, to bisect shrinker-caused
@@ -108,16 +96,6 @@ kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
-}
-
-dependencies {
-    // play-services-ads (google_mobile_ads) transitively depends on an old
-    // androidx.work, whose Room internals can end up version-skewed against
-    // the newer androidx.room other dependencies resolve. WorkManager then
-    // fails to create WorkDatabase during androidx.startup initialization —
-    // a launch crash. Pinning a current WorkManager keeps the whole
-    // work/room/sqlite trio consistent.
-    implementation("androidx.work:work-runtime:2.10.1")
 }
 
 flutter {

@@ -26,18 +26,11 @@ All room dimensions, acoustic parameters, and mode calculations are processed lo
 
 ## Third-Party Services
 
-### Google Mobile Ads
+ModeMap contains **no advertising, no analytics, and no third-party SDKs of any kind.** It does not connect to the internet at all — every calculation runs entirely on your device, and the app has no server to talk to.
 
-ModeMap displays advertisements provided by Google Mobile Ads SDK (Google AdMob). Google may collect and use data in accordance with their privacy policies to:
-- Serve targeted advertisements
-- Measure ad performance
-- Prevent fraud
+## Purchases
 
-For more information about how Google handles data, see:
-- [Google Privacy Policy](https://policies.google.com/privacy)
-- [Google AdMob Privacy and Security](https://support.google.com/admob)
-
-**Note:** Google's data collection is independent of ModeMap. ModeMap does not share user data with Google or any other third party.
+ModeMap is a one-time paid app, purchased through Google Play. Payment processing is handled entirely by Google Play's billing system — ModeMap itself never sees or stores your payment information. See [Google Play's privacy policy](https://policies.google.com/privacy) for how Google handles purchase data.
 
 ## Your Rights
 

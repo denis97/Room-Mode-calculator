@@ -21,9 +21,6 @@ dependencies:
   # Memory allocation helpers (calloc/malloc) for the native solver's FFI
   # bindings (lib/core/numeric/native/).
   ffi: ^2.1.0
-  google_mobile_ads: ^9.0.0
-  in_app_purchase: ^3.1.0
-  shared_preferences: ^2.2.0
 
 dev_dependencies:
   flutter_test:
