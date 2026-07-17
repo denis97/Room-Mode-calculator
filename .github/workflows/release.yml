@@ -18,7 +18,7 @@ name: Release AAB
 on:
   push:
     tags: ["v*"]
-on: workflow_dispatch
+  workflow_dispatch
 
 jobs:
   release:
