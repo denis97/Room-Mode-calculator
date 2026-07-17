@@ -1,5 +1,4 @@
 import 'dart:ffi' as ffi;
-import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:room_mode_calculator/core/numeric/native/room_mode_bindings.dart';
@@ -26,12 +25,15 @@ void main() {
       final polygonX = vertices.map((v) => v.$1).toList();
       final polygonY = vertices.map((v) => v.$2).toList();
 
+      // ignore: avoid_print
       print('Testing 10-point star: ${vertices.length} vertices');
+      // ignore: avoid_print
       print('Vertices: $vertices');
 
       // Test at different resolutions
       for (int res = 10; res <= 30; res += 5) {
         try {
+          // ignore: avoid_print
           print('\nResolution: $res');
 
           final nativeX =
@@ -70,11 +72,13 @@ void main() {
             final errMsg = errPtr == ffi.nullptr
                 ? 'Unknown error'
                 : errPtr.cast<Utf8>().toDartString();
+            // ignore: avoid_print
             print('  -> ERROR: $errMsg');
             lib.freeSolveResult(result);
             continue;
           }
 
+          // ignore: avoid_print
           print(
               '  -> Success: ${result.ref.modeCount} modes, ${result.ref.nodeCount} nodes, ${result.ref.triCount ~/ 3} triangles');
 
@@ -82,11 +86,13 @@ void main() {
           final freqs =
               result.ref.frequencies.asTypedList(result.ref.modeCount);
           for (var i = 0; i < result.ref.modeCount; i++) {
+            // ignore: avoid_print
             print('     Mode ${i + 1}: ${freqs[i].toStringAsFixed(1)} Hz');
           }
 
           lib.freeSolveResult(result);
         } catch (e) {
+          // ignore: avoid_print
           print('  -> EXCEPTION: $e');
         }
       }
