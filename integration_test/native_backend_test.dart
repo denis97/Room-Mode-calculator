@@ -4,7 +4,9 @@
 // own note on this). This is the actual gate for "is the native FEM solver
 // really running, not silently falling back to the pure-Dart FDM path".
 //
-// Run on a connected device/emulator with:
+// Not wired into CI: a GitHub Actions macOS runner booting an emulator for
+// this was too slow/flaky (timed out). Run manually on a connected
+// device/emulator instead:
 //   flutter test integration_test/native_backend_test.dart -d <device-id>
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
