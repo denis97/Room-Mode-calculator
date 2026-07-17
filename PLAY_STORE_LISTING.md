@@ -7,7 +7,7 @@ Calculate acoustic modes for any room shape — rectangular or custom.
 
 ## Full Description (up to 4000 characters)
 
-### ModeMap: Professional Room Acoustic Analysis in Your Pocket
+### ModeMap: Room Acoustic Analysis in Your Pocket
 
 Design better-sounding rooms with ModeMap, a powerful yet intuitive app for analyzing room acoustics. Whether you're setting up a home studio, treating a listening room, or optimizing a rehearsal space, understanding your room's acoustic modes is the first step to better sound.
 
@@ -50,7 +50,7 @@ Room modes are acoustic resonances at frequencies set by your room's dimensions.
 - **Musicians** – improve practice and performance spaces
 - **Audiophiles** – understand and tune their listening room
 - **Students** – learn room acoustics and modal physics hands-on
-- **Anyone serious about sound** – a genuinely professional-grade tool
+- **Anyone serious about sound** – a genuinely capable, accurate tool
 
 #### Technical Details
 
@@ -70,7 +70,7 @@ Your room data and every analysis stay on your device. Nothing is collected, sto
 • Tap modes to hear frequencies and see pressure patterns
 • Works completely offline—no internet required
 • No ads, ever—one-time purchase
-• Professional-grade acoustic analysis
+• Accurate, physics-based acoustic analysis
 • Intuitive, modern interface
 
 ---
@@ -103,7 +103,7 @@ Your room data and every analysis stay on your device. Nothing is collected, sto
 - Highlight: App's capability to handle arbitrary room geometries, not just boxes
 
 ### Screenshot 6: Full App Overview
-- Title: "Professional Acoustic Analysis, In Your Pocket"
+- Title: "Room Acoustic Analysis, In Your Pocket"
 - Show: Composite or landscape view of the main analysis interface
 - Highlight: Clean, modern UI with all key features visible
 
@@ -130,7 +130,7 @@ ModeMap is a **paid app** (suggested price: $1 USD / €1 EUR), no ads, no in-ap
 room acoustics, acoustic modes, room analysis, audio, acoustics, studio, acoustics app, room treatment, audio engineering, acoustic resonance, room optimization, sound engineering
 
 ### Promotional Text (optional)
-"Professional room acoustic analysis, now offline and on your phone. Understand your room's acoustic modes with instant, on-device calculations and 3D pressure visualization. No ads, ever."
+"Room acoustic analysis, now on your phone. Understand your room's acoustic modes with instant, on-device calculations and 3D pressure visualization. No ads, ever."
 
 ---
 
