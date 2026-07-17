@@ -97,9 +97,21 @@ inline std::vector<Tri2D> delaunayRefine(const std::vector<Tri2D>& tris) {
             int e[3][2] = {{t[ti][0], t[ti][1]}, {t[ti][1], t[ti][2]}, {t[ti][2], t[ti][0]}};
             for (auto& ee : e) edgeToTris[edgeKey(ee[0], ee[1])].push_back((int)ti);
         }
+        // Two different candidate edges can share a triangle (common once
+        // there are enough points for several near-cocircular quads at
+        // once, e.g. a dense/near-circular floor plan). Flipping one edge
+        // mutates that triangle's vertices in place, so a second flip in
+        // the *same* pass reading its stale pre-flip p/q from `t` would
+        // build a triangle from a mix of old and new geometry -- silently
+        // producing overlapping/tangled triangles with no error, which
+        // then poisons every downstream extrusion/FEM step. Cap each
+        // triangle to at most one flip per pass; anything it would still
+        // need gets picked up next pass against the now-consistent mesh.
+        std::vector<bool> touched(t.size(), false);
         for (auto& [edge, sharing] : edgeToTris) {
             if (sharing.size() != 2) continue; // boundary edge: never flip
             int ti0 = sharing[0], ti1 = sharing[1];
+            if (touched[ti0] || touched[ti1]) continue;
             auto opposite = [&](std::array<int, 3>& tr) {
                 for (int v : tr) if (v != edge.first && v != edge.second) return v;
                 return -1;
@@ -118,6 +130,7 @@ inline std::vector<Tri2D> delaunayRefine(const std::vector<Tri2D>& tris) {
             t[ti1] = {q, p, edge.second};
             if (!ccw(t[ti0][0], t[ti0][1], t[ti0][2])) std::swap(t[ti0][1], t[ti0][2]);
             if (!ccw(t[ti1][0], t[ti1][1], t[ti1][2])) std::swap(t[ti1][1], t[ti1][2]);
+            touched[ti0] = touched[ti1] = true;
             changed = true;
         }
     }
