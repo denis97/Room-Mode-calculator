@@ -1,7 +1,7 @@
 # ModeMap — Play Store Listing
 
 ## Short Description (80 characters max)
-Calculate and visualize room acoustic modes—offline and on your device.
+Calculate acoustic modes for any room shape — rectangular or custom.
 
 ---
 
@@ -9,57 +9,56 @@ Calculate and visualize room acoustic modes—offline and on your device.
 
 ### ModeMap: Professional Room Acoustic Analysis in Your Pocket
 
-Design better-sounding rooms with ModeMap, a powerful yet intuitive app for analyzing room acoustics. Whether you're setting up a home studio, treating a listening room, or optimizing a rehearsal space, understanding your room's acoustic modes is the first step to achieving better sound.
+Design better-sounding rooms with ModeMap, a powerful yet intuitive app for analyzing room acoustics. Whether you're setting up a home studio, treating a listening room, or optimizing a rehearsal space, understanding your room's acoustic modes is the first step to better sound.
 
 #### Why Room Modes Matter
 
-Room modes are acoustic resonances that occur at specific frequencies determined by your room's dimensions. These resonances create pressure peaks and nulls throughout your space, affecting how you hear bass and lower midrange frequencies. ModeMap helps you identify these critical modes so you can:
+Room modes are acoustic resonances at frequencies set by your room's dimensions. They create pressure peaks and nulls throughout your space, shaping how you hear bass and low midrange. ModeMap helps you:
 
-- **Understand your room's acoustics** – See exactly which frequencies are problematic in your space
-- **Plan treatments effectively** – Target acoustic treatment at the frequencies that matter most
-- **Optimize speaker placement** – Find positions with flatter frequency response
-- **Improve listening environments** – Create more accurate and balanced sound
+- **Understand your room's acoustics** – see exactly which frequencies are problematic
+- **Plan treatment effectively** – target acoustic treatment where it matters most
+- **Build a more accurate, balanced listening environment**
 
 #### Key Features
 
-✓ **Flexible Room Shapes** – Analyze rectangular rooms, or define custom room geometries for more complex spaces
+✓ **Rectangular & Custom Rooms** – instant analytical modes for standard rooms, or draw any floor plan (L-shapes, T-shapes, alcoves, anything) and solve it with an on-device finite-element engine
 
-✓ **3D Pressure Visualization** – See how acoustic pressure varies throughout your room at any frequency
+✓ **3D Pressure Visualization** – a rotatable 3D view of exactly how pressure varies through your room for any mode
 
-✓ **Interactive Piano Keyboard** – Tap any mode to hear its frequency and see its pressure pattern in real-time
+✓ **Interactive Piano Keyboard** – tap any mode to hear its frequency and watch its pressure pattern
 
-✓ **Full-Range Analysis** – Explore modes from the lowest bass resonances up to 500 Hz and beyond
+✓ **Room Quality Tools** – Bonello criterion and Schroeder frequency readouts, plus room-ratio guidance against recommended proportions, to judge how well-behaved your room's modal spacing is
 
-✓ **On-Device Computing** – All calculations run locally on your device—no internet required, instant results
+✓ **Full-Range Analysis** – explore modes from the lowest bass resonances up through your chosen cutoff
 
-✓ **Mode Classification** – View axial, tangential, and oblique modes with their relative strengths
+✓ **Mode Classification** – axial, tangential, and oblique modes shown with their relative strengths
 
-✓ **Instant Updates** – Change room dimensions and see results update in real-time
+✓ **On-Device Computing** – every calculation runs locally, instantly, with no internet connection
 
 #### How It Works
 
-1. Enter your room dimensions (or draw a custom room shape)
-2. Browse modes on the interactive frequency axis
-3. Tap any mode to visualize its pressure field in 3D
-4. Hear the frequency by tapping the piano keyboard
-5. Use this information to plan acoustic treatment and speaker placement
+1. Enter your room dimensions, or draw a custom floor plan
+2. Browse modes on the interactive frequency axis and mode list
+3. Tap any mode to see its pressure field in 3D
+4. Hear the frequency on the piano keyboard
+5. Check Bonello/Schroeder/room-ratio readouts to judge overall room quality
 
 #### Who Should Use ModeMap?
 
-- **Audio Engineers** – Optimize studio acoustics
-- **Acoustic Consultants** – Assess room performance
-- **Musicians** – Improve practice and performance spaces
-- **Audiophiles** – Understand their listening room
-- **Students** – Learn about room acoustics and acoustic physics
-- **Anyone serious about sound** – Get a professional acoustic tool
+- **Audio Engineers** – optimize studio acoustics
+- **Acoustic Consultants** – assess room performance quickly, on-site
+- **Musicians** – improve practice and performance spaces
+- **Audiophiles** – understand and tune their listening room
+- **Students** – learn room acoustics and modal physics hands-on
+- **Anyone serious about sound** – a genuinely professional-grade tool
 
 #### Technical Details
 
-ModeMap uses rigorous acoustical physics to calculate modal frequencies based on rigid-wall room theory. All computations are performed on-device using advanced numerical methods for both standard rectangular rooms and arbitrary geometries.
+ModeMap uses rigorous rigid-wall room acoustics to compute modal frequencies analytically for rectangular rooms, and a finite-element solver (with a finite-difference fallback) for arbitrary geometries — all running natively on-device.
 
 #### Privacy & Offline
 
-Your room data and all acoustic analyses stay on your device. We don't collect, store, or transmit any of your data — there are no ads, no analytics, and no internet connection required. ModeMap works completely offline, and is a one-time purchase with no ads, ever.
+Your room data and every analysis stay on your device. Nothing is collected, stored, or transmitted — no ads, no analytics, no internet connection required. ModeMap is a one-time purchase, with no ads, ever.
 
 ---
 
