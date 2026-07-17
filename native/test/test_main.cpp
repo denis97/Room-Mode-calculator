@@ -194,6 +194,47 @@ void testDelaunayRefinementFixesSlivers() {
     check(std::fabs(triArea - trueArea) < 1e-6, msg);
 }
 
+void testDelaunayRefineHandlesManyPointsWithoutOverlap() {
+    printf("\n-- Delaunay refinement on a many-point floor plan: no overlapping triangles --\n");
+    // Regression: delaunayRefine used to apply every flip a single pass found
+    // from one stale snapshot of the mesh. Once a floor plan has enough
+    // points to put several near-cocircular quads up for a flip at once
+    // (easy to hit with a many-vertex custom shape, e.g. a smoothly curved
+    // or densely-edited outline), the same triangle could be a candidate for
+    // two different flips in that one pass. The second flip then read that
+    // triangle's already-mutated (by the first flip) vertices as if they
+    // were still original, producing a geometrically invalid triangle that
+    // overlaps its neighbours -- with no error raised, silently poisoning
+    // the extruded FEM mesh and everything downstream (wrong or unstable
+    // mode frequencies, a visibly tangled 3D mesh). Triangulated area
+    // exceeding the true polygon area is the tell: it can only happen if
+    // triangles overlap, since a valid triangulation partitions the polygon
+    // exactly.
+    unsigned seed = 12345;
+    auto rnd = [&]() { seed = seed * 1103515245u + 12345u; return ((seed >> 16) & 0x7fff) / 32768.0; };
+    Polygon manyPt;
+    const int n = 60;
+    for (int i = 0; i < n; ++i) {
+        double angle = 2 * M_PI * i / n;
+        double jitter = (rnd() - 0.5) * 0.001; // tiny, as real edits produce
+        double r = 3.0 + jitter;
+        manyPt.verts.push_back({5.0 + r * std::cos(angle), 5.0 + r * std::sin(angle)});
+    }
+    double trueArea = manyPt.area();
+    auto tris = earClipTriangulate(manyPt);
+    double sumArea = 0;
+    for (auto& t : tris) {
+        double x1 = t[0].first, y1 = t[0].second;
+        double x2 = t[1].first, y2 = t[1].second;
+        double x3 = t[2].first, y3 = t[2].second;
+        sumArea += std::fabs((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1)) / 2.0;
+    }
+    char msg[160];
+    snprintf(msg, sizeof(msg), "%d-vertex triangulation area %.4f matches true polygon area %.4f (no overlap)",
+             n, sumArea, trueArea);
+    check(std::fabs(sumArea - trueArea) < 1e-6, msg);
+}
+
 int main() {
     testBoxFdm();
     testBoxFem();
@@ -201,6 +242,7 @@ int main() {
     testStarFemSanity();
     testEarClipOnConcavePolygon();
     testDelaunayRefinementFixesSlivers();
+    testDelaunayRefineHandlesManyPointsWithoutOverlap();
     printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL TESTS PASSED" : "TESTS FAILED",
            failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;
