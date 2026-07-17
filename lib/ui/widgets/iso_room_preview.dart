@@ -130,9 +130,14 @@ class _IsoBoxPainter extends CustomPainter {
 
     Offset mid(int a, int b) =>
         Offset.lerp(s(corners[a]), s(corners[b]), 0.5)!;
-    label('L ${l.toStringAsFixed(1)}', mid(0, 1) + const Offset(0, 20));
+    // Anchored to the box's actual extremes in this fixed projection (true
+    // regardless of L/W/H, since the rotation is constant): edge 3-7 is
+    // always the leftmost edge, corner 2 is always the single lowest point
+    // with edge 2-3 the length edge that reaches it, and edge 1-2 is the
+    // remaining (width) edge, sitting to the right of both.
+    label('L ${l.toStringAsFixed(1)}', mid(2, 3) + const Offset(0, 20));
     label('W ${w.toStringAsFixed(1)}', mid(1, 2) + const Offset(28, 0));
-    label('H ${h.toStringAsFixed(1)}', mid(0, 4) + const Offset(-24, 0));
+    label('H ${h.toStringAsFixed(1)}', mid(3, 7) + const Offset(-24, 0));
   }
 
   @override
