@@ -26,13 +26,25 @@ class ComputedMode {
   final Float64List field;
 }
 
+/// Which solver actually produced a [ModalAnalysisResult]: the native FEM
+/// path (native/, the accurate one) or the pure-Dart FDM path (a fallback --
+/// see [runFloorPlanAnalysis] in custom_room_providers.dart for when that
+/// happens and why it's never silent).
+enum SolverBackend { nativeFem, dartFdm }
+
 /// The result of a numerical modal analysis: the boundary surface [mesh] the
-/// modes' fields live on, and the list of [modes] (ascending in frequency).
+/// modes' fields live on, the list of [modes] (ascending in frequency), and
+/// which [backend] actually solved it.
 class ModalAnalysisResult {
-  ModalAnalysisResult({required this.mesh, required this.modes});
+  ModalAnalysisResult({
+    required this.mesh,
+    required this.modes,
+    required this.backend,
+  });
 
   final RenderMesh mesh;
   final List<ComputedMode> modes;
+  final SolverBackend backend;
 }
 
 /// Converts a solved [VoxelGrid] field (one value per interior cell) into a
@@ -132,5 +144,9 @@ ModalAnalysisResult analyzeRoomShape(
     return ComputedMode(frequency: frequency, eigenvalue: mu, field: field);
   }).toList();
 
-  return ModalAnalysisResult(mesh: boundary.mesh, modes: modes);
+  return ModalAnalysisResult(
+    mesh: boundary.mesh,
+    modes: modes,
+    backend: SolverBackend.dartFdm,
+  );
 }

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -61,6 +62,15 @@ class FloorPlan {
 /// specific floor plan (e.g. self-intersecting). The two solvers have
 /// different failure modes, so falling back gives the best chance of a result
 /// rather than a hard error either way.
+///
+/// This never happens quietly: the fallback is always logged (so it shows up
+/// in `flutter run`/logcat output even in release), and [ModalAnalysisResult.
+/// backend] tells the caller which solver actually ran, for anything that
+/// wants to surface it in the UI. On Android specifically the native library
+/// is always bundled into the APK, so a fallback there is never expected --
+/// in debug/profile builds that trips an assertion instead of silently
+/// downgrading, so a real regression fails a `flutter test`/dev run instead
+/// of quietly shipping the less-accurate solver.
 ModalAnalysisResult runFloorPlanAnalysis(FloorPlan plan) {
   final shape = ExtrudedPolygonShape(
     floor: plan.vertices,
@@ -74,7 +84,17 @@ ModalAnalysisResult runFloorPlanAnalysis(FloorPlan plan) {
       targetPerAxis: plan.resolution,
       modeCount: plan.modeCount,
     );
-  } catch (_) {
+  } catch (e) {
+    // print, not debugPrint: this runs inside a compute() isolate, which has
+    // no SchedulerBinding for debugPrint's throttling to hook into.
+    // ignore: avoid_print
+    print('runFloorPlanAnalysis: native FEM solver failed, falling back to '
+        'the Dart FDM solver. $e');
+    assert(
+      !Platform.isAndroid,
+      'Native FEM solver failed on Android, where it is always bundled and '
+      'should never fail: $e',
+    );
     return analyzeRoomShape(
       shape,
       temperatureC: plan.temperatureC,

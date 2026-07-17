@@ -265,6 +265,41 @@ class _Section extends StatelessWidget {
   }
 }
 
+/// Shown only when [ModalAnalysisResult.backend] is [SolverBackend.dartFdm]
+/// -- i.e. the native FEM solver failed and this result came from the
+/// pure-Dart fallback instead (see runFloorPlanAnalysis's own doc comment
+/// for when that happens). Surfaced here so it's visible at a glance rather
+/// than only in logs: the fallback is a coarser voxel-grid method, so its
+/// mode frequencies are less accurate than the native solver's.
+class _FallbackSolverBanner extends StatelessWidget {
+  const _FallbackSolverBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.tangential.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.tangential.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber_rounded,
+              size: 16, color: AppColors.tangential),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Native solver unavailable — using the lower-accuracy fallback',
+              style: TextStyle(fontSize: 12, color: AppColors.tangential.withValues(alpha: 0.9)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _CuboidViewer extends ConsumerWidget {
   const _CuboidViewer({required this.player});
 
@@ -466,6 +501,11 @@ class _CustomViewerBody extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       children: [
+        if (result.backend == SolverBackend.dartFdm)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: _FallbackSolverBanner(),
+          ),
         _Section(
           title: 'Resonances — tap a peak',
           trailing: '${modes.length} modes',

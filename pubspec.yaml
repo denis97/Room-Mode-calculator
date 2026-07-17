@@ -26,6 +26,13 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
+  # Runs inside the real app process on a device/emulator (unlike flutter_test,
+  # which always runs on the host) -- needed for integration_test/, which
+  # verifies the native FEM solver is actually used on-device, not just that
+  # the Dart FFI bindings compile.
+  integration_test:
+    sdk: flutter
+
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.14.4
 

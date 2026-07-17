@@ -95,7 +95,11 @@ ModalAnalysisResult analyzeRoomShapeNative(
         modes.add(ComputedMode(frequency: frequency, eigenvalue: eigenvalue, field: field));
       }
 
-      return ModalAnalysisResult(mesh: mesh, modes: modes);
+      return ModalAnalysisResult(
+        mesh: mesh,
+        modes: modes,
+        backend: SolverBackend.nativeFem,
+      );
     } finally {
       lib.freeSolveResult(resultPtr);
     }
