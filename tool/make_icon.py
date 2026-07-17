@@ -162,14 +162,16 @@ def main():
     # Full icon: background + cube, modest margin. No corner rounding baked
     # in -- iOS/Android apply their own mask on top of the full-bleed square.
     img = radial_bg(big)
-    img = draw_cube(img, margin=0.16)
+    img = draw_cube(img, margin=0.08)
     img = img.resize((S, S), Image.LANCZOS)
     img.save(f"{out}/icon.png")
 
-    # Adaptive foreground: transparent bg, cube shrunk into the ~66% safe
-    # zone (launchers may mask up to ~33% of each edge).
+    # Adaptive foreground: transparent bg, cube filling the ~66% safe zone
+    # (launchers may mask up to ~33% of each edge) -- margin=0.16 puts the
+    # cube's long axis at ~68% of the canvas, right at that limit without
+    # risking clipping by a circular/squircle mask.
     fg = Image.new("RGBA", (big, big), (0, 0, 0, 0))
-    fg = draw_cube(fg, margin=0.30)
+    fg = draw_cube(fg, margin=0.16)
     fg = fg.resize((S, S), Image.LANCZOS)
     fg.save(f"{out}/icon_foreground.png")
     print("wrote", out)
