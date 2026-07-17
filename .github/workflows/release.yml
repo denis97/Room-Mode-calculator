@@ -1,9 +1,10 @@
 name: Release AAB
 
 # Builds the signed Play Store App Bundle when a version tag is pushed
-# (e.g. `git tag v1.0.0 && git push origin v1.0.0`). Kept separate from
-# build.yml: that one is a fast per-commit compile gate, this one produces
-# the actual distributable and needs the signing secrets.
+# (e.g. `git tag v1.0.0 && git push origin v1.0.0`), or on demand via the
+# Actions tab. Kept separate from build.yml: that one is a fast per-commit
+# compile gate, this one produces the actual distributable and needs the
+# signing secrets.
 #
 # Required repository secrets (Settings → Secrets and variables → Actions):
 #   UPLOAD_KEYSTORE_BASE64  base64 of the upload keystore
@@ -12,13 +13,24 @@ name: Release AAB
 #   KEY_ALIAS               key alias (e.g. `upload`)
 #   KEY_PASSWORD            key password
 #
-# The produced .aab is attached as a workflow artifact; download it and
-# upload to the Play Console (or wire a Play publish action later).
+# The produced .aab is always attached as a workflow artifact. Optionally,
+# a manual run can also publish it straight to the Play Console -- see the
+# `publish` job below for what that additionally needs.
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      publish_to_play:
+        description: "Also publish this build to the Play Console (leave off to just build+sign the AAB)"
+        type: boolean
+        default: false
+      track:
+        description: "Play Console track to publish to (only used if publish_to_play is checked)"
+        type: choice
+        options: [internal, alpha, beta, production]
+        default: internal
 
 jobs:
   release:
@@ -73,3 +85,38 @@ jobs:
           name: app-release-aab
           path: build/app/outputs/bundle/release/app-release.aab
           if-no-files-found: error
+
+  publish:
+    needs: release
+    # Deliberately narrow: only a manual run with the box explicitly
+    # checked can publish to the Play Console -- a tag push alone never
+    # does (it only builds+signs, as before). This is a real, externally
+    # visible release with no undo button, so it shouldn't be one accidental
+    # click (or one git tag) away.
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_to_play
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download AAB artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app-release-aab
+          path: build/app/outputs/bundle/release/
+
+      # Requires a Google Cloud service account with the Play Developer API
+      # enabled, linked in Play Console under Setup -> API access, and
+      # granted release permissions for this app (Users and permissions ->
+      # the service account's email -> at minimum "Release to testing
+      # tracks", plus "Release to production" if you'll ever pick that
+      # track here). Store the service account's JSON key -- the whole
+      # file contents, unmodified -- as the PLAY_SERVICE_ACCOUNT_JSON
+      # secret. Note the Play Developer API also requires at least one
+      # release to already have been uploaded to the app manually via the
+      # Play Console web UI before it will accept API uploads at all.
+      - name: Publish to Play Console
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.denodes.modeMap
+          releaseFiles: build/app/outputs/bundle/release/app-release.aab
+          track: ${{ inputs.track }}
+          status: completed
