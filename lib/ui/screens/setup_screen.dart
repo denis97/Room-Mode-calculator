@@ -12,6 +12,7 @@ import '../widgets/iso_room_preview.dart';
 import '../widgets/segmented_toggle.dart';
 import '../widgets/stepper_field.dart';
 import 'floor_plan_expanded_screen.dart';
+import 'onboarding_screen.dart';
 
 /// Resolution slider values at or above this switch the native solver to a
 /// finer FEM mesh level (see resolutionToFemParams in
@@ -49,9 +50,25 @@ class SetupScreen extends ConsumerWidget {
                       letterSpacing: -0.5,
                     ),
                   ),
-                  Text('SETUP',
-                      style: monoStyle(
-                          fontSize: 11, color: AppColors.textFaint)),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('SETUP',
+                          style: monoStyle(
+                              fontSize: 11, color: AppColors.textFaint)),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        tooltip: 'How this app works',
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.help_outline_rounded,
+                            size: 19, color: AppColors.textFaint),
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                              builder: (_) => const OnboardingScreen()),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 4),

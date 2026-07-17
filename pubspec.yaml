@@ -22,6 +22,9 @@ dependencies:
   # bindings (lib/core/numeric/native/).
   ffi: ^2.1.0
 
+  # Persists whether the first-launch onboarding intro has been shown.
+  shared_preferences: ^2.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
